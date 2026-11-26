@@ -540,9 +540,9 @@ sources:
     topics: [medicine_hht]
     trust: 5
     poll_interval: 24h
-    active: true
+    active: false
     verified: true
-    notes: "Verified 2026-11-26: API v2 returned JSON (HTTP 200) for this exact URL, including the sort parameter."
+    notes: "Verified 2026-11-26: API v2 returned JSON (HTTP 200) for this exact URL, including the sort parameter. Disabled until a clinicaltrials fetcher exists."
 
   - id: science-news
     name: "Science News (AAAS)"
