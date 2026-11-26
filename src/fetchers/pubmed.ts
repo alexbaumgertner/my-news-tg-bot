@@ -11,8 +11,14 @@ const TOOL_NAME = "my-news-tg-bot";
 export const PUBMED_ARTICLE_URL = "https://pubmed.ncbi.nlm.nih.gov/";
 
 const esearchSchema = z.object({
-  esearchresult: z.object({ idlist: z.array(z.string()) }),
+  esearchresult: z.object({
+    count: z.coerce.number().int().nonnegative(),
+    idlist: z.array(z.string()),
+  }),
 });
+
+/** Safety limit. A search that needs more pages fails instead of losing records. */
+const MAX_PAGES = 50;
 
 /**
  * Publication types, from the strongest evidence to the weakest.
@@ -135,7 +141,13 @@ export function parsePubmedXml(xml: string, language: string): RawItem[] {
     processEntities: true,
   });
   const root = parser.parse(xml) as XmlNode[];
-  const set = find(root, "PubmedArticleSet") ?? [];
+  const set = find(root, "PubmedArticleSet");
+  if (!set) {
+    const rootTag = root.flatMap((n) => Object.keys(n)).find((key) => key !== ":@");
+    throw new Error(
+      `Unexpected efetch response: root is <${rootTag ?? "none"}>, not <PubmedArticleSet>`,
+    );
+  }
   const items: RawItem[] = [];
 
   for (const articleNode of findAll(set, "PubmedArticle")) {
@@ -182,7 +194,12 @@ export function parsePubmedXml(xml: string, language: string): RawItem[] {
  * Build the esearch URL from the configured source URL.
  * Forces JSON, adds the tool name and the API key, and limits the date range with `since`.
  */
-export function esearchUrl(sourceUrl: string, since: Date | null, apiKey?: string): string {
+export function esearchUrl(
+  sourceUrl: string,
+  since: Date | null,
+  apiKey?: string,
+  retstart = 0,
+): string {
   const url = new URL(sourceUrl);
   if (!url.pathname.endsWith("/esearch.fcgi")) {
     throw new Error(`Not an E-utilities esearch URL: ${sourceUrl}`);
@@ -190,6 +207,7 @@ export function esearchUrl(sourceUrl: string, since: Date | null, apiKey?: strin
   url.searchParams.set("retmode", "json");
   url.searchParams.set("tool", TOOL_NAME);
   if (apiKey) url.searchParams.set("api_key", apiKey);
+  if (retstart > 0) url.searchParams.set("retstart", String(retstart));
   if (since) {
     // Entrez date: the day the record entered PubMed. mindate needs maxdate.
     const day = since.toISOString().slice(0, 10).replaceAll("-", "/");
@@ -246,12 +264,24 @@ export class PubmedFetcher implements Fetcher {
 
   async fetch(source: FetchSource, since: Date | null): Promise<FetchResult> {
     const { apiKey } = this.options;
-    const search = await this.get(esearchUrl(source.url, since, apiKey));
-    const ids = esearchSchema.parse(JSON.parse(search.body)).esearchresult.idlist;
-    if (ids.length === 0) return { items: [], notModified: false, etag: null, lastModified: null };
+    const items = new Map<string, RawItem>();
+    let retstart = 0;
 
-    const details = await this.get(efetchUrl(ids, apiKey));
-    const items = parsePubmedXml(details.body, source.language);
-    return { items, notModified: false, etag: null, lastModified: null };
+    // Read every page of the date window. The caller advances lastSuccessAt only after all pages.
+    for (let page = 0; ; page++) {
+      if (page >= MAX_PAGES) {
+        throw new Error(`PubMed search has more than ${MAX_PAGES} pages: ${source.slug}`);
+      }
+      const search = await this.get(esearchUrl(source.url, since, apiKey, retstart));
+      const { count, idlist } = esearchSchema.parse(JSON.parse(search.body)).esearchresult;
+      if (idlist.length === 0) break;
+
+      const details = await this.get(efetchUrl(idlist, apiKey));
+      for (const item of parsePubmedXml(details.body, source.language)) items.set(item.url, item);
+
+      retstart += idlist.length;
+      if (retstart >= count) break;
+    }
+    return { items: [...items.values()], notModified: false, etag: null, lastModified: null };
   }
 }

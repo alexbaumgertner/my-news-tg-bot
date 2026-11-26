@@ -84,6 +84,11 @@ describe("parsePubmedXml", () => {
     expect(items[3]!.metadata?.studyType).toBeNull();
   });
 
+  it("rejects an unexpected root", () => {
+    expect(() => parsePubmedXml("<html><body>Busy</body></html>", "en")).toThrow(/<html>/);
+    expect(() => parsePubmedXml("", "en")).toThrow(/Unexpected/);
+  });
+
   it("returns no items for an empty set", () => {
     expect(parsePubmedXml("<PubmedArticleSet></PubmedArticleSet>", "en")).toEqual([]);
   });
@@ -133,7 +138,7 @@ describe("PubmedFetcher", () => {
   });
 
   it("skips efetch when the search finds nothing", async () => {
-    const empty = JSON.stringify({ esearchresult: { idlist: [] } });
+    const empty = JSON.stringify({ esearchresult: { count: "0", idlist: [] } });
     const { fetcher, urls } = makeFetcher([empty]);
     const result = await fetcher.fetch(source, null);
     expect(result.items).toEqual([]);
@@ -149,6 +154,41 @@ describe("PubmedFetcher", () => {
     await withKey.fetcher.fetch(source, null);
     expect(withKey.sleep).toHaveBeenCalledWith(110);
     expect(withKey.urls().every((u) => u.includes("api_key=KEY"))).toBe(true);
+  });
+
+  it("reads every page of the search with retstart", async () => {
+    const page = (ids: string[]) => JSON.stringify({ esearchresult: { count: "3", idlist: ids } });
+    const { fetcher, urls, sleep } = makeFetcher([
+      page(["43091933", "43080066"]),
+      efetchXml,
+      page(["43074935"]),
+      efetchXml,
+    ]);
+    const result = await fetcher.fetch(source, null);
+    const u = urls();
+    expect(u).toHaveLength(4);
+    expect(new URL(u[0]!).searchParams.has("retstart")).toBe(false);
+    expect(new URL(u[2]!).searchParams.get("retstart")).toBe("2");
+    // The same articles in both efetch answers are stored once.
+    expect(result.items).toHaveLength(4);
+    // The rate limit also applies between pages.
+    expect(sleep).toHaveBeenCalledTimes(3);
+  });
+
+  it("fails when the search needs more pages than the limit", async () => {
+    const endless = Array.from({ length: 60 }, () => [
+      JSON.stringify({ esearchresult: { count: "100000", idlist: ["1"] } }),
+      efetchXml,
+    ]).flat();
+    const { fetcher } = makeFetcher(endless);
+    await expect(fetcher.fetch(source, null)).rejects.toThrow(/pages/);
+  });
+
+  it("fails on an efetch error document", async () => {
+    const error =
+      '<?xml version="1.0"?><eFetchResult><ERROR>Invalid db name</ERROR></eFetchResult>';
+    const { fetcher } = makeFetcher([esearchJson, error]);
+    await expect(fetcher.fetch(source, null)).rejects.toThrow(/PubmedArticleSet/);
   });
 
   it("fails on an invalid esearch answer", async () => {
