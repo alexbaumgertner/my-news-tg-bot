@@ -79,7 +79,7 @@ prompts/     LLM prompts as Markdown, versioned with the code
 src/         fetchers/, pipeline/, llm/, bot/, db/
 tests/       unit tests and tests/golden/ (labeled items for prompt regression)
 deploy/      systemd units and timers for home-ubuntu
-docs/        SPEC.md and decisions
+docs/        SPEC.md, DB.md (schema) and decisions
 ```
 
 ## Working on this repo
