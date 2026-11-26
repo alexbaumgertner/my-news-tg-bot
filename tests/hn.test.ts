@@ -83,7 +83,9 @@ describe("HnFetcher", () => {
     const overrides: Record<string, Response> = {};
     for (const id of ids) overrides[`${API}item/${id}.json`] = new Response("x", { status: 500 });
     const fetchImpl = fixtureFetch(overrides);
-    await expect(makeFetcher(fetchImpl).fetch(source, null)).rejects.toThrow(/story requests failed/);
+    await expect(makeFetcher(fetchImpl).fetch(source, null)).rejects.toThrow(
+      /story requests failed/,
+    );
   });
 
   it("throws when the list cannot be loaded", async () => {
