@@ -4,12 +4,15 @@ import type { FetchResult, FetchSource, Fetcher, RawItem } from "./types.js";
 /** Minimum time between two requests to t.me. Default: 2000 ms. */
 const MIN_REQUEST_GAP_MS = 2000;
 const MAX_TITLE_LENGTH = 120;
+/** Maximum number of preview pages per fetch. A page has about 20 posts. */
+const DEFAULT_MAX_PAGES = 10;
 
 const MESSAGE_SPLIT = /<div class="tgme_widget_message_wrap/;
 const POST_ID = /data-post="([A-Za-z0-9_]+)\/(\d+)"/;
 const POST_DATE = /<a class="tgme_widget_message_date"[^>]*>\s*<time[^>]*datetime="([^"]+)"/;
 const TEXT_START = /<div class="tgme_widget_message_text js-message_text"[^>]*>/g;
 const LINK_PREVIEW = /<a class="tgme_widget_message_link_preview"[^>]*href="([^"]+)"/;
+const OLDER_PAGE = /<a [^>]*class="tme_messages_more[^"]*"[^>]*data-before="(\d+)"/;
 const ANCHOR = /<a\s[^>]*href="([^"]+)"/g;
 
 const NAMED_ENTITIES: Record<string, string> = {
@@ -82,6 +85,8 @@ export interface TelegramPost {
 export interface ParsedPreview {
   /** Posts that have a text or an external link. */
   posts: TelegramPost[];
+  /** Value of `?before=` for the next older page, or null on the oldest page. */
+  olderBefore: number | null;
   /** Number of message blocks found in the HTML. */
   messageBlocks: number;
   /** Number of message blocks without an id or a date. A high number means a layout change. */
@@ -130,7 +135,9 @@ export function parseTelegramPreview(html: string): ParsedPreview {
       externalUrl,
     });
   }
-  return { posts, messageBlocks: blocks.length, malformedBlocks };
+  const older = OLDER_PAGE.exec(html)?.[1];
+  const olderBefore = older ? Number(older) : null;
+  return { posts, olderBefore, messageBlocks: blocks.length, malformedBlocks };
 }
 
 function makeTitle(text: string): string {
@@ -145,6 +152,8 @@ export interface TelegramWebOptions {
   /** Minimum time between two requests. Default: 2000 ms. */
   minRequestGapMs?: number;
   now?: () => number;
+  /** Maximum number of pages per fetch. Default: 10. */
+  maxPages?: number;
 }
 
 /**
@@ -152,7 +161,9 @@ export interface TelegramWebOptions {
  * No account is needed. The item URL is the external link of the post when there is one.
  * Otherwise it is the post permalink. The permalink is always in `metadata.telegram`.
  * The fetcher keeps no state. The collector filters by `since` and the database rejects repeated URLs.
- * It throws when the page has no posts, so a layout change or a disabled preview is never silent.
+ * When `since` is set, it follows the older pages (`?before=<id>`) until a post older than `since`
+ * appears or the history ends. It throws when the page limit is reached before that.
+ * It throws when the first page has no posts, so a layout change or a disabled preview is never silent.
  */
 export class TelegramWebFetcher implements Fetcher {
   private lastRequestAt: number | null = null;
@@ -174,25 +185,52 @@ export class TelegramWebFetcher implements Fetcher {
   }
 
   async fetch(source: FetchSource, since: Date | null): Promise<FetchResult> {
-    const response = await httpGet(
-      source.url,
-      {},
-      { ...this.options.http, beforeAttempt: () => this.throttle() },
-    );
-    const parsed = parseTelegramPreview(response.body);
-    if (parsed.messageBlocks === 0) {
-      throw new Error(
-        `No posts found in ${source.url}. The web preview may be disabled or the layout changed.`,
+    const maxPages = this.options.maxPages ?? DEFAULT_MAX_PAGES;
+    const collected: TelegramPost[] = [];
+    const seen = new Set<number>();
+    let pageUrl = source.url;
+    let previousBefore = Number.POSITIVE_INFINITY;
+    for (let page = 1; ; page++) {
+      const response = await httpGet(
+        pageUrl,
+        {},
+        { ...this.options.http, beforeAttempt: () => this.throttle() },
       );
-    }
-    if (parsed.malformedBlocks === parsed.messageBlocks) {
-      throw new Error(
-        `Layout change in ${source.url}: ${parsed.messageBlocks} message blocks, none with a post id and a date.`,
-      );
+      const parsed = parseTelegramPreview(response.body);
+      if (page === 1) {
+        if (parsed.messageBlocks === 0) {
+          throw new Error(
+            `No posts found in ${source.url}. The web preview may be disabled or the layout changed.`,
+          );
+        }
+        if (parsed.malformedBlocks === parsed.messageBlocks) {
+          throw new Error(
+            `Layout change in ${source.url}: ${parsed.messageBlocks} message blocks, none with a post id and a date.`,
+          );
+        }
+      }
+      for (const post of parsed.posts) {
+        if (seen.has(post.id)) continue;
+        seen.add(post.id);
+        collected.push(post);
+      }
+      if (since === null) break;
+      const reachedCutoff = parsed.posts.some((p) => p.publishedAt < since);
+      if (reachedCutoff || parsed.olderBefore === null) break;
+      if (parsed.olderBefore >= previousBefore) {
+        throw new Error(`Paging does not advance in ${source.url} at ${pageUrl}.`);
+      }
+      if (page >= maxPages) {
+        throw new Error(
+          `Page limit ${maxPages} reached in ${source.url} before the cutoff ${since.toISOString()}.`,
+        );
+      }
+      previousBefore = parsed.olderBefore;
+      pageUrl = new URL(`?before=${parsed.olderBefore}`, source.url).toString();
     }
 
     const items: RawItem[] = [];
-    for (const post of parsed.posts) {
+    for (const post of collected) {
       if (since && post.publishedAt < since) continue;
       items.push({
         url: post.externalUrl ?? post.permalink,

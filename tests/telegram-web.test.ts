@@ -147,4 +147,104 @@ describe("TelegramWebFetcher", () => {
     await fetcher.fetch(source("b"), null);
     expect(sleep).toHaveBeenCalledWith(1500);
   });
+
+  describe("paging", () => {
+    const channel = "zakat_podcast";
+    const html = fixture("zakat_podcast");
+    const posts = parseTelegramPreview(html).posts;
+
+    /** Make an older page from the fixture: shift ids and dates back by `days`. */
+    function olderPage(days: number, olderBefore: number | null): string {
+      let page = html
+        .replace(
+          /data-post="zakat_podcast\/(\d+)"/g,
+          (_m, id) => `data-post="zakat_podcast/${Number(id) - 1000 * days}"`,
+        )
+        .replace(/datetime="([^"]+)"/g, (_m, d: string) => {
+          const date = new Date(new Date(d).getTime() - days * 86_400_000);
+          return `datetime="${date.toISOString()}"`;
+        });
+      page = page.replace(
+        /data-before="\d+"/,
+        olderBefore === null ? "" : `data-before="${olderBefore}"`,
+      );
+      return olderBefore === null ? page.replace(/class="tme_messages_more[^"]*"/, "") : page;
+    }
+
+    function pagedFetcher(pages: string[], maxPages?: number) {
+      const urls: string[] = [];
+      const fetchImpl = (async (url: string) => {
+        urls.push(url);
+        return new Response(pages[urls.length - 1] ?? pages[pages.length - 1]);
+      }) as unknown as typeof fetch;
+      const fetcher = new TelegramWebFetcher({
+        http: { userAgent: "t", fetchImpl, maxAttempts: 1 },
+        minRequestGapMs: 0,
+        ...(maxPages ? { maxPages } : {}),
+      });
+      return { fetcher, urls };
+    }
+
+    it("reads only the first page without `since`", async () => {
+      const { fetcher, urls } = pagedFetcher([html]);
+      await fetcher.fetch(source(channel), null);
+      expect(urls).toEqual([`https://t.me/s/${channel}`]);
+    });
+
+    it("follows the older page when every post of the first page is newer than `since`", async () => {
+      const since = new Date(posts[0]!.publishedAt.getTime() - 3 * 86_400_000);
+      const { fetcher, urls } = pagedFetcher([html, olderPage(10, null)]);
+      const result = await fetcher.fetch(source(channel), since);
+      expect(urls).toEqual([`https://t.me/s/${channel}`, `https://t.me/s/${channel}?before=5245`]);
+      expect(result.items).toHaveLength(15);
+      expect(result.items.every((i) => i.publishedAt! >= since)).toBe(true);
+    });
+
+    it("stops at the cutoff and does not request more pages", async () => {
+      const since = new Date(posts[5]!.publishedAt);
+      const { fetcher, urls } = pagedFetcher([html, olderPage(10, null)]);
+      await fetcher.fetch(source(channel), since);
+      expect(urls).toHaveLength(1);
+    });
+
+    it("stops when the history is exhausted", async () => {
+      const since = new Date(0);
+      const { fetcher, urls } = pagedFetcher([html.replace(/data-before="\d+"/, "")]);
+      const result = await fetcher.fetch(source(channel), since);
+      expect(urls).toHaveLength(1);
+      expect(result.items).toHaveLength(15);
+    });
+
+    it("fails loudly when the page limit is reached before the cutoff", async () => {
+      const since = new Date(0);
+      const pages = [html, olderPage(10, 4000), olderPage(20, 3000), olderPage(30, 2000)];
+      const { fetcher, urls } = pagedFetcher(pages, 3);
+      await expect(fetcher.fetch(source(channel), since)).rejects.toThrow(/Page limit 3/);
+      expect(urls).toHaveLength(3);
+    });
+
+    it("fails loudly when the older link does not advance", async () => {
+      const since = new Date(0);
+      const { fetcher } = pagedFetcher([html, html]);
+      await expect(fetcher.fetch(source(channel), since)).rejects.toThrow(/does not advance/);
+    });
+
+    it("waits between page requests", async () => {
+      const sleep = vi.fn(async () => {});
+      const pages = [html, olderPage(10, null)];
+      let n = 0;
+      const fetcher = new TelegramWebFetcher({
+        http: {
+          userAgent: "t",
+          maxAttempts: 1,
+          sleep,
+          fetchImpl: (async () => new Response(pages[n++]!)) as typeof fetch,
+        },
+        minRequestGapMs: 2000,
+        now: () => 1000,
+      });
+      await fetcher.fetch(source(channel), new Date(0));
+      expect(sleep).toHaveBeenCalledWith(2000);
+    });
+  });
 });
