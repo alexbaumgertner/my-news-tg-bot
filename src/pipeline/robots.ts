@@ -2,6 +2,10 @@ export interface RobotsOptions {
   userAgent: string;
   fetchImpl?: typeof fetch;
   timeoutMs?: number;
+  /** How long (ms) a transient failure stays cached. Default: 5 minutes. */
+  failureTtlMs?: number;
+  /** Clock in ms. Inject it in tests. */
+  now?: () => number;
 }
 
 const MAX_ROBOTS_BYTES = 500_000;
@@ -87,38 +91,66 @@ export function isPathAllowed(rules: Rules, path: string): boolean {
   return best.allowed;
 }
 
-/** Fetch and cache robots.txt once per origin. A missing or broken file allows all. */
+interface Loaded {
+  rules: Rules | null;
+  /** True after a 5xx response, a network error or a timeout. */
+  transient: boolean;
+}
+
+interface Entry {
+  pending: Promise<Loaded>;
+  /** Time (ms) when the entry expires. Null means it never expires. */
+  expiresAt: number | null;
+}
+
+const DEFAULT_FAILURE_TTL_MS = 5 * 60_000;
+
+/**
+ * Fetch and cache robots.txt once per origin. A missing file allows all.
+ * A transient failure is cached for a short time only. Then the next check retries.
+ */
 export class RobotsCache {
-  private readonly cache = new Map<string, Promise<Rules | null>>();
+  private readonly cache = new Map<string, Entry>();
 
   constructor(private readonly options: RobotsOptions) {}
 
   async isAllowed(url: string): Promise<boolean> {
     const parsed = new URL(url);
-    let pending = this.cache.get(parsed.origin);
-    if (!pending) {
-      pending = this.load(parsed.origin);
-      this.cache.set(parsed.origin, pending);
+    const now = (this.options.now ?? Date.now)();
+    let entry = this.cache.get(parsed.origin);
+    if (!entry || (entry.expiresAt !== null && now >= entry.expiresAt)) {
+      const pending = this.load(parsed.origin);
+      entry = { pending, expiresAt: null };
+      this.cache.set(parsed.origin, entry);
+      const created = entry;
+      const ttl = this.options.failureTtlMs ?? DEFAULT_FAILURE_TTL_MS;
+      void pending.then((loaded) => {
+        if (loaded.transient) created.expiresAt = (this.options.now ?? Date.now)() + ttl;
+      });
     }
-    const rules = await pending;
+    const { rules } = await entry.pending;
     return rules ? isPathAllowed(rules, parsed.pathname + parsed.search) : true;
   }
 
-  private async load(origin: string): Promise<Rules | null> {
+  private async load(origin: string): Promise<Loaded> {
     try {
       const response = await (this.options.fetchImpl ?? fetch)(`${origin}/robots.txt`, {
         headers: { "User-Agent": this.options.userAgent },
         signal: AbortSignal.timeout(this.options.timeoutMs ?? 10_000),
         redirect: "follow",
       });
-      if (response.status >= 500) return { disallow: ["/"], allow: [] };
+      if (response.status >= 500) {
+        await response.body?.cancel();
+        return { rules: { disallow: ["/"], allow: [] }, transient: true };
+      }
       if (!response.ok) {
         await response.body?.cancel();
-        return null;
+        return { rules: null, transient: false };
       }
-      return parseRobots(await readCappedText(response, MAX_ROBOTS_BYTES), this.options.userAgent);
+      const body = await readCappedText(response, MAX_ROBOTS_BYTES);
+      return { rules: parseRobots(body, this.options.userAgent), transient: false };
     } catch {
-      return null;
+      return { rules: null, transient: true };
     }
   }
 }

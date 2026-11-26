@@ -106,6 +106,33 @@ describe("RobotsCache", () => {
     expect(cancelled).toBe(true);
     expect(pulled).toBeLessThan(20);
   });
+
+  it("retries a transient robots.txt failure after the TTL", async () => {
+    let status = 503;
+    const fetchImpl = vi.fn(async () =>
+      status === 503
+        ? new Response("", { status: 503 })
+        : new Response("User-agent: *\nAllow: /\n"),
+    ) as unknown as typeof fetch;
+    let time = 0;
+    const cache = new RobotsCache({
+      userAgent,
+      fetchImpl,
+      failureTtlMs: 1_000,
+      now: () => time,
+    });
+    expect(await cache.isAllowed("https://example.com/x")).toBe(false);
+    status = 200;
+    time = 500;
+    expect(await cache.isAllowed("https://example.com/x")).toBe(false);
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    time = 1_500;
+    expect(await cache.isAllowed("https://example.com/x")).toBe(true);
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    time = 10_000_000;
+    expect(await cache.isAllowed("https://example.com/y")).toBe(true);
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+  });
 });
 
 describe("Normalizer", () => {
