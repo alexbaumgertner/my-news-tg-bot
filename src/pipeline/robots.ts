@@ -4,6 +4,28 @@ export interface RobotsOptions {
   timeoutMs?: number;
 }
 
+const MAX_ROBOTS_BYTES = 500_000;
+
+/** Read a body up to `maxBytes`. Cancel the stream when the limit is reached. */
+export async function readCappedText(response: Response, maxBytes: number): Promise<string> {
+  if (!response.body) return "";
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let received = 0;
+  let out = "";
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    received += value.byteLength;
+    out += decoder.decode(value, { stream: true });
+    if (received >= maxBytes) {
+      await reader.cancel();
+      break;
+    }
+  }
+  return out + decoder.decode();
+}
+
 interface Rules {
   disallow: string[];
   allow: string[];
@@ -94,7 +116,7 @@ export class RobotsCache {
         await response.body?.cancel();
         return null;
       }
-      return parseRobots((await response.text()).slice(0, 500_000), this.options.userAgent);
+      return parseRobots(await readCappedText(response, MAX_ROBOTS_BYTES), this.options.userAgent);
     } catch {
       return null;
     }

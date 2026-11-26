@@ -5,7 +5,7 @@ import {
   detectLanguage,
   extractMainText,
 } from "../src/pipeline/normalize.js";
-import { isPathAllowed, parseRobots } from "../src/pipeline/robots.js";
+import { RobotsCache, isPathAllowed, parseRobots } from "../src/pipeline/robots.js";
 import type { RawItem } from "../src/fetchers/types.js";
 
 const html = `<html><head><title>T</title><link rel="canonical" href="/canonical?utm_source=x"></head>
@@ -15,18 +15,25 @@ ${"<p>The research team published a new result about agentic coding tools and ho
 
 const userAgent = "test-agent/1.0";
 
-function makeFetch(pages: Record<string, { body: string; finalUrl?: string; status?: number }>) {
+function makeFetch(
+  pages: Record<string, { body: string; redirectTo?: string; status?: number }>,
+  robotsByOrigin: Record<string, string> = {},
+) {
   return vi.fn(async (input: string | URL | Request) => {
     const url = String(input);
-    if (url.endsWith("/robots.txt")) return new Response("User-agent: *\nDisallow: /private\n");
+    if (url.endsWith("/robots.txt")) {
+      const origin = new URL(url).origin;
+      return new Response(robotsByOrigin[origin] ?? "User-agent: *\nDisallow: /private\n");
+    }
     const page = pages[url];
     if (!page) return new Response("nope", { status: 404 });
-    const response = new Response(page.body, {
+    if (page.redirectTo) {
+      return new Response(null, { status: 302, headers: { location: page.redirectTo } });
+    }
+    return new Response(page.body, {
       status: page.status ?? 200,
       headers: { "content-type": "text/html" },
     });
-    Object.defineProperty(response, "url", { value: page.finalUrl ?? url });
-    return response;
   }) as unknown as typeof fetch;
 }
 
@@ -78,10 +85,34 @@ describe("robots", () => {
   });
 });
 
+describe("RobotsCache", () => {
+  it("cancels an oversized robots.txt stream early", async () => {
+    const chunk = new TextEncoder().encode("# comment\n".repeat(10_000));
+    let pulled = 0;
+    let cancelled = false;
+    const body = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        pulled++;
+        if (pulled > 100) return controller.close();
+        controller.enqueue(chunk);
+      },
+      cancel() {
+        cancelled = true;
+      },
+    });
+    const fetchImpl = vi.fn(async () => new Response(body)) as unknown as typeof fetch;
+    const cache = new RobotsCache({ userAgent, fetchImpl });
+    expect(await cache.isAllowed("https://example.com/x")).toBe(true);
+    expect(cancelled).toBe(true);
+    expect(pulled).toBeLessThan(20);
+  });
+});
+
 describe("Normalizer", () => {
   it("fetches the page for a snippet, follows the redirect and canonicalizes", async () => {
     const fetchImpl = makeFetch({
-      "https://example.com/a?utm_source=rss": { body: html, finalUrl: "https://example.com/real" },
+      "https://example.com/a?utm_source=rss": { body: "", redirectTo: "https://example.com/real" },
+      "https://example.com/real": { body: html },
     });
     const n = new Normalizer({ userAgent, fetchImpl });
     const [item] = await n.normalizeAll([raw({ text: "short snippet" })]);
@@ -112,6 +143,52 @@ describe("Normalizer", () => {
       String(c[0]),
     );
     expect(calls).toEqual(["https://example.com/robots.txt"]);
+  });
+
+  const fetched = (f: typeof fetch) =>
+    (f as unknown as ReturnType<typeof vi.fn>).mock.calls.map((c) => String(c[0]));
+
+  it("does not fetch a redirect into a disallowed path", async () => {
+    const fetchImpl = makeFetch({
+      "https://example.com/out": { body: "", redirectTo: "https://example.com/private/article" },
+      "https://example.com/private/article": { body: html },
+    });
+    const n = new Normalizer({ userAgent, fetchImpl });
+    const [item] = await n.normalizeAll([
+      raw({ url: "https://example.com/out", text: "snippet text here" }),
+    ]);
+    expect(item!.text).toBe("snippet text here");
+    expect(fetched(fetchImpl)).not.toContain("https://example.com/private/article");
+  });
+
+  it("does not fetch a redirect into another origin that disallows it", async () => {
+    const fetchImpl = makeFetch(
+      {
+        "https://example.com/out": { body: "", redirectTo: "https://other.example/page" },
+        "https://other.example/page": { body: html },
+      },
+      { "https://other.example": "User-agent: *\nDisallow: /\n" },
+    );
+    const n = new Normalizer({ userAgent, fetchImpl });
+    const [item] = await n.normalizeAll([
+      raw({ url: "https://example.com/out", text: "snippet text here" }),
+    ]);
+    expect(item!.text).toBe("snippet text here");
+    expect(fetched(fetchImpl)).toContain("https://other.example/robots.txt");
+    expect(fetched(fetchImpl)).not.toContain("https://other.example/page");
+  });
+
+  it("stops after too many redirects", async () => {
+    const pages = Object.fromEntries(
+      Array.from({ length: 10 }, (_, i) => [
+        `https://example.com/r${i}`,
+        { body: "", redirectTo: `https://example.com/r${i + 1}` },
+      ]),
+    );
+    const fetchImpl = makeFetch(pages);
+    const n = new Normalizer({ userAgent, fetchImpl });
+    await n.normalizeAll([raw({ url: "https://example.com/r0", text: "snippet text here" })]);
+    expect(fetched(fetchImpl).filter((u) => /\/r\d+$/.test(u))).toHaveLength(6);
   });
 
   it("gives the same hash for the same content under different URLs", async () => {

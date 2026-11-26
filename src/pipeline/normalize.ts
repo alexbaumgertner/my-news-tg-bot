@@ -3,7 +3,7 @@ import { franc } from "franc-min";
 import { parseHTML } from "linkedom";
 import { canonicalizeUrl, contentHash } from "../fetchers/normalize.js";
 import type { RawItem } from "../fetchers/types.js";
-import { RobotsCache } from "./robots.js";
+import { RobotsCache, readCappedText } from "./robots.js";
 
 /** An item after normalization. All fields are set. */
 export interface NormalizedItem {
@@ -36,6 +36,7 @@ export const DEFAULT_SNIPPET_MAX_CHARS = 600;
 export const DEFAULT_BATCH_SIZE = 10;
 const DEFAULT_MAX_PAGE_BYTES = 2_000_000;
 const MIN_LANGUAGE_CHARS = 20;
+const MAX_REDIRECTS = 5;
 
 /** Map ISO 639-3 codes from franc to ISO 639-1 codes. Other languages map to "und" (unknown). */
 const ISO3_TO_ISO1: Record<string, string> = {
@@ -89,26 +90,6 @@ interface Extracted {
   text: string | null;
   /** URL after redirects and `<link rel="canonical">`. */
   finalUrl: string;
-}
-
-/** Read a response body up to `maxBytes`. Stop early to protect memory. */
-async function readCapped(response: Response, maxBytes: number): Promise<string> {
-  if (!response.body) return "";
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  let received = 0;
-  let out = "";
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    received += value.byteLength;
-    out += decoder.decode(value, { stream: true });
-    if (received >= maxBytes) {
-      await reader.cancel();
-      break;
-    }
-  }
-  return out + decoder.decode();
 }
 
 /** Extract the main text of an HTML page with Readability. */
@@ -197,27 +178,43 @@ export class Normalizer {
   /** Fetch a page once, follow redirects and extract the text. Return null on any failure. */
   private async fetchPage(url: string): Promise<Extracted | null> {
     try {
-      if (!/^https?:/i.test(url)) return null;
-      if (!(await this.robots.isAllowed(url))) return null;
-      const response = await this.doFetch(url, {
-        headers: {
-          "User-Agent": this.options.userAgent,
-          Accept: "text/html, application/xhtml+xml;q=0.9",
-        },
-        signal: AbortSignal.timeout(this.timeoutMs),
-        redirect: "follow",
-      });
+      // Follow redirects by hand. Check robots.txt for every destination before the request.
+      const signal = AbortSignal.timeout(this.timeoutMs);
+      let current = url;
+      let response: Response | null = null;
+      for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
+        if (!/^https?:/i.test(current)) return null;
+        if (!(await this.robots.isAllowed(current))) return null;
+        const res = await this.doFetch(current, {
+          headers: {
+            "User-Agent": this.options.userAgent,
+            Accept: "text/html, application/xhtml+xml;q=0.9",
+          },
+          signal,
+          redirect: "manual",
+        });
+        if (res.status >= 300 && res.status < 400) {
+          await res.body?.cancel();
+          const location = res.headers.get("location");
+          if (!location) return null;
+          current = new URL(location, current).toString();
+          continue;
+        }
+        response = res;
+        break;
+      }
+      if (!response) return null;
       if (!response.ok) {
         await response.body?.cancel();
         return null;
       }
-      const redirectedTo = response.url || url;
+      const redirectedTo = current;
       const type = response.headers.get("content-type") ?? "";
       if (type && !/html|xml/i.test(type)) {
         await response.body?.cancel();
         return { text: null, finalUrl: redirectedTo };
       }
-      const html = await readCapped(response, this.maxPageBytes);
+      const html = await readCappedText(response, this.maxPageBytes);
       const { text, canonicalLink } = extractMainText(html, redirectedTo, this.maxTextChars);
       return { text, finalUrl: canonicalLink ?? redirectedTo };
     } catch {
