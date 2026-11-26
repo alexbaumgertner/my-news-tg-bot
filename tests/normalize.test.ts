@@ -1,0 +1,145 @@
+import { describe, expect, it, vi } from "vitest";
+import {
+  Normalizer,
+  cleanText,
+  detectLanguage,
+  extractMainText,
+} from "../src/pipeline/normalize.js";
+import { isPathAllowed, parseRobots } from "../src/pipeline/robots.js";
+import type { RawItem } from "../src/fetchers/types.js";
+
+const html = `<html><head><title>T</title><link rel="canonical" href="/canonical?utm_source=x"></head>
+<body><nav>Menu Menu</nav><article><h1>Big news</h1>
+${"<p>The research team published a new result about agentic coding tools and how they change daily work for engineers.</p>".repeat(8)}
+</article><footer>Footer</footer></body></html>`;
+
+const userAgent = "test-agent/1.0";
+
+function makeFetch(pages: Record<string, { body: string; finalUrl?: string; status?: number }>) {
+  return vi.fn(async (input: string | URL | Request) => {
+    const url = String(input);
+    if (url.endsWith("/robots.txt")) return new Response("User-agent: *\nDisallow: /private\n");
+    const page = pages[url];
+    if (!page) return new Response("nope", { status: 404 });
+    const response = new Response(page.body, {
+      status: page.status ?? 200,
+      headers: { "content-type": "text/html" },
+    });
+    Object.defineProperty(response, "url", { value: page.finalUrl ?? url });
+    return response;
+  }) as unknown as typeof fetch;
+}
+
+const raw = (over: Partial<RawItem> = {}): RawItem => ({
+  url: "https://example.com/a?utm_source=rss",
+  title: "Big news",
+  text: null,
+  publishedAt: null,
+  language: "en",
+  ...over,
+});
+
+describe("helpers", () => {
+  it("detects language and falls back for short text", () => {
+    expect(
+      detectLanguage("The quick brown fox jumps over the lazy dog near the river bank", "ru"),
+    ).toBe("en");
+    expect(
+      detectLanguage("Быстрая коричневая лиса перепрыгивает через ленивую собаку у реки", "en"),
+    ).toBe("ru");
+    expect(detectLanguage("Hi", "tr")).toBe("tr");
+  });
+
+  it("cleans HTML and caps length", () => {
+    expect(cleanText("<p>Hello&nbsp;<b>world</b></p><script>x()</script>", 100)).toBe(
+      "Hello world",
+    );
+    expect(cleanText("a".repeat(50), 10)).toHaveLength(10);
+  });
+
+  it("extracts main text and canonical link", () => {
+    const result = extractMainText(html, "https://example.com/a", 300);
+    expect(result.text).toContain("agentic coding");
+    expect(result.text).not.toContain("Footer");
+    expect(result.text!.length).toBeLessThanOrEqual(300);
+    expect(result.canonicalLink).toBe("https://example.com/canonical?utm_source=x");
+  });
+});
+
+describe("robots", () => {
+  it("applies the most specific rule", () => {
+    const rules = parseRobots(
+      "User-agent: *\nDisallow: /private\nAllow: /private/open\n",
+      userAgent,
+    );
+    expect(isPathAllowed(rules, "/private/x")).toBe(false);
+    expect(isPathAllowed(rules, "/private/open/x")).toBe(true);
+    expect(isPathAllowed(rules, "/public")).toBe(true);
+  });
+});
+
+describe("Normalizer", () => {
+  it("fetches the page for a snippet, follows the redirect and canonicalizes", async () => {
+    const fetchImpl = makeFetch({
+      "https://example.com/a?utm_source=rss": { body: html, finalUrl: "https://example.com/real" },
+    });
+    const n = new Normalizer({ userAgent, fetchImpl });
+    const [item] = await n.normalizeAll([raw({ text: "short snippet" })]);
+    expect(item!.text).toContain("agentic coding");
+    expect(item!.language).toBe("en");
+    expect(item!.canonicalUrl).toBe("https://example.com/canonical");
+    expect(item!.contentHash).toMatch(/^[0-9a-f]{64}$/);
+  });
+
+  it("skips the fetch when the feed has the full text", async () => {
+    const fetchImpl = makeFetch({});
+    const n = new Normalizer({ userAgent, fetchImpl });
+    const long = "Это длинный текст новости про искусственный интеллект. ".repeat(20);
+    const [item] = await n.normalizeAll([raw({ text: long, language: "en" })]);
+    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(item!.language).toBe("ru");
+    expect(item!.canonicalUrl).toBe("https://example.com/a");
+  });
+
+  it("respects robots.txt and keeps the snippet when the page fails", async () => {
+    const fetchImpl = makeFetch({});
+    const n = new Normalizer({ userAgent, fetchImpl });
+    const [item] = await n.normalizeAll([
+      raw({ url: "https://example.com/private/x", text: "snippet text here" }),
+    ]);
+    expect(item!.text).toBe("snippet text here");
+    const calls = (fetchImpl as unknown as ReturnType<typeof vi.fn>).mock.calls.map((c) =>
+      String(c[0]),
+    );
+    expect(calls).toEqual(["https://example.com/robots.txt"]);
+  });
+
+  it("gives the same hash for the same content under different URLs", async () => {
+    const n = new Normalizer({ userAgent, fetchImpl: makeFetch({}) });
+    const text = "Same long text. ".repeat(60);
+    const [a, b] = await n.normalizeAll([
+      raw({ url: "https://a.example/1", text }),
+      raw({ url: "https://b.example/2", text }),
+    ]);
+    expect(a!.contentHash).toBe(b!.contentHash);
+  });
+
+  it("stays within the memory budget on 200 items", async () => {
+    const fetchImpl = makeFetch(
+      Object.fromEntries(
+        Array.from({ length: 200 }, (_, i) => [`https://example.com/p${i}`, { body: html }]),
+      ),
+    );
+    const n = new Normalizer({ userAgent, fetchImpl, batchSize: 10 });
+    const before = process.memoryUsage().rss;
+    const out = await n.normalizeAll(
+      Array.from({ length: 200 }, (_, i) =>
+        raw({ url: `https://example.com/p${i}`, title: `T${i}` }),
+      ),
+    );
+    const growthMb = (process.memoryUsage().rss - before) / 1024 / 1024;
+    expect(out).toHaveLength(200);
+    expect(out.every((i) => i.text && i.language && i.canonicalUrl && i.contentHash)).toBe(true);
+    expect(growthMb).toBeLessThan(150);
+  }, 60_000);
+});

@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 
-const TRACKING_PARAMS = /^(utm_|fbclid$|gclid$|mc_cid$|mc_eid$|ref$|ref_src$)/i;
+const TRACKING_PARAMS =
+  /^(utm_|fbclid$|gclid$|mc_cid$|mc_eid$|ref$|ref_src$|igshid$|yclid$|_hsenc$|_hsmi$)/i;
 
 /** Make a stable URL for exact dedup: no fragment, no tracking parameters, no trailing slash. */
 export function canonicalizeUrl(raw: string): string {
