@@ -35,6 +35,7 @@ The profile lives in `config/profile.yaml`. Each topic has a weight, keywords, s
 | Sport | Low | Training research; major volleyball tournaments (one line) |
 | Popular science and space | Low | Major discoveries in physics, biology, astronomy and space missions; long reads from Quanta, Nature, New Scientist |
 | English learning | Medium | Material from English-learning channels; B2–C1 reading (e.g. The Economist) |
+| History | Low | Posts from history channels I follow (Russian Empire history); one line, no summary |
 | Books | Notice only | New releases from book channels and publishers: one-line notice with a link, no summary |
 
 **Hard exclusions:** Russian domestic politics, crime, disasters and conflicts with no direct effect on me, celebrity news, crypto hype, clickbait.
@@ -59,7 +60,7 @@ The list below is a starting point. In Phase 0 each entry is checked to see whet
 | Patient and medical organizations | RSS / parsing | Cure HHT, relevant medical associations |
 | EU and governments | RSS / parsing + translation | European Commission (Digital, Research & Innovation, Education), CORDIS, AI Act news; Germany: BMBF, DAAD, Make it in Germany; UNESCO and OECD (education); Turkey: official migration and tax sites |
 | Publishers | RSS / new-release pages | O'Reilly, Manning, Pragmatic Bookshelf, popular-science publishers; new releases on my topics only |
-| Telegram channels | Public web preview `t.me/s/<channel>` (decided); no account, so no risk for my personal account. Private channels are out of scope | itsallinenglish, dbibliothek, economistenglish, zakat_podcast |
+| Telegram channels | Public web preview `t.me/s/<channel>` (decided); no account, so no risk for my personal account. Channels with the preview disabled need MTProto (v1) | itsallinenglish, zakat_podcast (preview works); dbibliothek, economistenglish (preview disabled, v1) |
 | Science and tech magazines | RSS | Nature, Quanta, Scientific American, New Scientist, MIT Technology Review, Ars Technica, WIRED, IEEE Spectrum, The Verge, Space.com, NASA, Universe Today, The Conversation, EdSurge |
 | Aggregators (fallback) | API / RSS | Hacker News (score threshold), Techmeme, Google News RSS for key queries |
 | Russian-language | RSS | Habr (AI and Frontend hubs), N+1; world topics only |
@@ -67,6 +68,7 @@ The list below is a starting point. In Phase 0 each entry is checked to see whet
 
 **Rules**
 
+- Some Telegram channels re-share paid magazines, newspapers and books as files. The bot uses such posts only as a signal that a new issue or book exists. The bot links to the publisher's page, never to the file.
 - If more than 90% of a source's items are rejected for 2 weeks in a row, the bot proposes disabling it.
 - Scraping respects `robots.txt` and site terms. Full texts are never forwarded to Telegram: only my own short summary and a link.
 - A new source can be added with `/add_source <url>` (v1). The bot detects its type and proposes topics.
@@ -229,7 +231,7 @@ Every table has `user_id`.
 - Collect and verify `sources.yaml` (~30 sources).
 - Label the golden set.
 - Prepare home-ubuntu and the API accounts.
-- Resolve the open questions in §11.
+- Resolve the open questions in §12.
 
 **MVP (one sprint, about a week)**
 
@@ -264,7 +266,18 @@ Every table has `user_id`.
 - [ ] LLM spend stays within budget.
 - [ ] I actually read the digest on at least 10 of the 14 days. This is the main product criterion.
 
-## 11. Open questions
+## 11. Development workflow
+
+- Development runs on GitHub, not on `home-ubuntu`.
+- Each task is a GitHub issue with a goal, tasks and acceptance criteria.
+- The owner adds the label `claude` to an issue. Claude Code runs in GitHub Actions (`.github/workflows/claude.yml`), implements the issue and opens a pull request.
+- The owner reviews the pull request. To ask for changes, the owner writes a comment that starts with `@claude`.
+- Cost:
+  - GitHub Actions: standard runners are free for public repositories.
+  - Claude: the agent uses the owner's Claude subscription (OAuth token), not the bot's $5 API budget.
+- Issues that need the owner's own input have the label `owner: me`. Do not give them to the agent.
+
+## 12. Open questions
 
 All resolved on 2026-11-26.
 

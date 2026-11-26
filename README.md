@@ -2,7 +2,7 @@
 
 A personal Telegram bot that sends me a morning and an evening digest of world news **filtered for my own life and career**. It collects from many sources, has an LLM score each story against my interest profile, and sends only the few items that actually matter to me.
 
-> Status: **Phase 0 (preparation)**. Open questions are resolved (SPEC §11). No code yet. Specification: [`docs/SPEC.md`](docs/SPEC.md). Plan: [milestones](https://github.com/alexbaumgertner/my-news-tg-bot/milestones).
+> Status: **Phase 0 (preparation)**. Open questions are resolved (SPEC §12). No code yet. Specification: [`docs/SPEC.md`](docs/SPEC.md). Plan: [milestones](https://github.com/alexbaumgertner/my-news-tg-bot/milestones).
 
 ## Why this exists
 
@@ -84,4 +84,6 @@ docs/        SPEC.md and decisions
 
 ## Working on this repo
 
-Development is done mostly by coding agents (Claude Code). Conventions for humans and agents are in [`CLAUDE.md`](CLAUDE.md). All code, comments, commits, issues and docs are in **English**.
+Development runs on GitHub. Each task is an issue. To give an issue to the agent, add the label **`claude`**. Claude Code then runs in GitHub Actions, implements the issue and opens a pull request. To ask for changes on a pull request, write a comment that starts with `@claude`. Details: [`docs/SPEC.md` §11](docs/SPEC.md#11-development-workflow).
+
+Conventions for humans and agents are in [`CLAUDE.md`](CLAUDE.md). All code, comments, commits, issues and docs are in **English** (Simplified Technical English style).

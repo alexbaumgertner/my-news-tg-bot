@@ -13,8 +13,9 @@
 #   verified      true only after a real request returned a valid feed (issue #2)
 #   notes         anything an agent or I should know
 #
-# Every URL below was provided by me but NOT yet verified with a real request.
-# Issue #2 verifies each one, sets `verified: true` or `active: false` with a reason.
+# These 18 sources were provided by me and checked on 2026-11-26 in a browser.
+# 16 work; 2 Telegram channels have the web preview disabled (active: false).
+# Issue #2 adds the remaining sources from SPEC §3.
 
 sources:
   # --- Fundamental science and popular science ---
@@ -27,8 +28,8 @@ sources:
     trust: 5
     poll_interval: 3h
     active: true
-    verified: false
-    notes: Whole-journal feed; may mix research papers with News & Comment. Check whether a news-only feed exists.
+    verified: true
+    notes: "Verified 2026-11-26: 75 items. Whole-journal feed: research papers and news mixed. Pre-filter must handle volume."
 
   - id: quanta
     name: Quanta Magazine
@@ -39,19 +40,19 @@ sources:
     trust: 5
     poll_interval: 6h
     active: true
-    verified: false
+    verified: true
 
   - id: scientific-american
     name: Scientific American
     type: rss
-    url: http://rss.sciam.com/ScientificAmerican-Global
+    url: https://www.scientificamerican.com/platform/syndication/rss/
     language: en
     topics: [science_space, medicine_hht]
     trust: 4
     poll_interval: 3h
     active: true
-    verified: false
-    notes: Legacy feed host; may be dead. If so, find the current feed on scientificamerican.com.
+    verified: true
+    notes: "Verified 2026-11-26. Old URL rss.sciam.com is dead; this URL is linked from the site header (50 items)."
 
   - id: new-scientist
     name: New Scientist
@@ -62,7 +63,8 @@ sources:
     trust: 4
     poll_interval: 3h
     active: true
-    verified: false
+    verified: true
+    notes: "Verified 2026-11-26. Redirects to https://www.newscientist.com/feed/ (10 items)."
 
   # --- Technology and the IT industry ---
   - id: mit-tech-review
@@ -74,7 +76,7 @@ sources:
     trust: 5
     poll_interval: 3h
     active: true
-    verified: false
+    verified: true
     notes: Consider the AI topic feed only if the general feed is too noisy.
 
   - id: ars-technica
@@ -86,7 +88,7 @@ sources:
     trust: 4
     poll_interval: 2h
     active: true
-    verified: false
+    verified: true
     notes: High volume. Prefer section feeds (AI, science) if the pre-filter lets too much through.
 
   - id: wired
@@ -98,7 +100,7 @@ sources:
     trust: 3
     poll_interval: 3h
     active: true
-    verified: false
+    verified: true
     notes: High volume, long reads. Good candidate for the evening long read.
 
   - id: ieee-spectrum
@@ -110,7 +112,7 @@ sources:
     trust: 5
     poll_interval: 6h
     active: true
-    verified: false
+    verified: true
 
   - id: the-verge
     name: The Verge
@@ -121,44 +123,45 @@ sources:
     trust: 2
     poll_interval: 2h
     active: true
-    verified: false
+    verified: true
     notes: Very high volume, consumer-oriented. Low trust; prefer an AI or Science section feed.
 
   # --- Space and astronomy ---
   - id: space-com
     name: Space.com
     type: rss
-    url: https://www.space.com/feeds/all
+    url: https://www.space.com/feeds.xml
     language: en
     topics: [science_space]
     trust: 3
     poll_interval: 3h
     active: true
-    verified: false
-    notes: High volume aggregator.
+    verified: true
+    notes: "Verified 2026-11-26. Old /feeds/all redirects here. High volume (50 items)."
 
   - id: nasa-breaking
     name: NASA Breaking News
     type: rss
-    url: https://www.nasa.gov/rss/dyn/breaking_news.rss
+    url: https://www.nasa.gov/news-release/feed/
     language: en
     topics: [science_space]
     trust: 5
     poll_interval: 6h
     active: true
-    verified: false
-    notes: nasa.gov was redesigned; this legacy path may redirect or be gone. Find the current news feed if so.
+    verified: true
+    notes: "Verified 2026-11-26. Legacy breaking_news.rss redirects to the news-release feed."
 
   - id: universe-today
     name: Universe Today
     type: rss
-    url: https://www.universetoday.com/feed
+    url: https://www.universetoday.com/rss.xml
     language: en
     topics: [science_space]
     trust: 3
     poll_interval: 6h
     active: true
-    verified: false
+    verified: true
+    notes: "Verified 2026-11-26. Old /feed redirects here."
 
   # --- Education and academia ---
   - id: the-conversation
@@ -170,7 +173,7 @@ sources:
     trust: 4
     poll_interval: 3h
     active: true
-    verified: false
+    verified: true
     notes: Written by researchers; strong education section.
 
   - id: edsurge
@@ -182,7 +185,7 @@ sources:
     trust: 4
     poll_interval: 6h
     active: true
-    verified: false
+    verified: true
     notes: Core source for the easy-deep-learning portal (EdTech, AI in education).
 
   # --- Telegram channels (public web preview, no account needed) ---
@@ -191,12 +194,12 @@ sources:
     type: telegram_web
     url: https://t.me/s/itsallinenglish
     language: en
-    topics: [english_learning]
+    topics: [books, english_learning]
     trust: 3
     poll_interval: 3h
     active: true
-    verified: false
-    notes: Topics are a guess from the name; confirm after the first fetch.
+    verified: true
+    notes: "Verified 2026-11-26: web preview works (~89K subscribers). Posts announce new issues of magazines and newspapers and new books, often as file uploads. Use posts only as a signal of new releases: link to the publisher, never to the files."
 
   - id: tg-dbibliothek
     name: "Telegram: dbibliothek"
@@ -206,9 +209,9 @@ sources:
     topics: [books]
     trust: 3
     poll_interval: 6h
-    active: true
+    active: false
     verified: false
-    notes: Book channel. New releases are announced as one-line notices (no summary), see SPEC §5. Language is a guess.
+    notes: "Checked 2026-11-26: channel exists (Deutsche Bibliothek, ~15.5K subscribers), but the web preview t.me/s/ is disabled. Needs MTProto (v1). Use posts only as a signal of new books: link to the publisher, never to files."
 
   - id: tg-economistenglish
     name: "Telegram: economistenglish"
@@ -218,18 +221,18 @@ sources:
     topics: [economy, english_learning]
     trust: 3
     poll_interval: 3h
-    active: true
+    active: false
     verified: false
-    notes: Re-posts of The Economist; good B2–C1 reading material. Topics are a guess.
+    notes: "Checked 2026-11-26: channel exists (~33K subscribers), but the web preview t.me/s/ is disabled. Needs MTProto (v1). Posts re-share The Economist issues; link to economist.com, never to files. Alternative: an official Economist RSS feed."
 
   - id: tg-zakat-podcast
     name: "Telegram: zakat_podcast"
     type: telegram_web
     url: https://t.me/s/zakat_podcast
     language: ru
-    topics: []
+    topics: [history]
     trust: 3
     poll_interval: 6h
     active: true
-    verified: false
-    notes: Topics unknown; assign after reading recent posts. Russian-language — world topics only (SPEC §1).
+    verified: true
+    notes: "Verified 2026-11-26: web preview works. \"Zakat Imperii\" (Andrei Aksyonov): history of the Russian Empire, podcast and posts (~31K subscribers). Not current news. Add a low-weight `history` topic to the profile (#1)."

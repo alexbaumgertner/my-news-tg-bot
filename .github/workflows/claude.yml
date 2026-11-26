@@ -1,0 +1,65 @@
+# Claude Code agent for this repository.
+#
+# Triggers:
+#   1. The repository owner adds the label `claude` to an issue
+#      -> the agent implements the issue and opens a pull request.
+#   2. The repository owner writes `@claude ...` in an issue or PR comment
+#      -> the agent answers or changes the code.
+#
+# Only the owner can trigger a run. This is a public repository, so other
+# users must not start paid agent runs.
+#
+# Required secret: CLAUDE_CODE_OAUTH_TOKEN (run `claude setup-token` locally).
+# Required app: the Claude GitHub App must be installed on this repository.
+
+name: Claude agent
+
+on:
+  issues:
+    types: [labeled]
+  issue_comment:
+    types: [created]
+  pull_request_review_comment:
+    types: [created]
+  pull_request_review:
+    types: [submitted]
+
+concurrency:
+  # One agent run per issue or PR at a time.
+  group: claude-${{ github.event.issue.number || github.event.pull_request.number }}
+  cancel-in-progress: false
+
+jobs:
+  claude:
+    if: |
+      (github.event_name == 'issues' && github.event.label.name == 'claude') ||
+      (github.event_name == 'issue_comment' &&
+        contains(github.event.comment.body, '@claude') &&
+        github.event.comment.author_association == 'OWNER') ||
+      (github.event_name == 'pull_request_review_comment' &&
+        contains(github.event.comment.body, '@claude') &&
+        github.event.comment.author_association == 'OWNER') ||
+      (github.event_name == 'pull_request_review' &&
+        contains(github.event.review.body, '@claude') &&
+        github.event.review.author_association == 'OWNER')
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+      id-token: write
+      actions: read
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Run Claude Code
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          label_trigger: claude
+          # Change the model per run: write `@claude` with a request to use opus, or edit this line.
+          claude_args: --model sonnet --max-turns 80
