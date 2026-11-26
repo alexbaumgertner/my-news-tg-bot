@@ -37,6 +37,7 @@ export const DEFAULT_BATCH_SIZE = 10;
 const DEFAULT_MAX_PAGE_BYTES = 2_000_000;
 const MIN_LANGUAGE_CHARS = 20;
 const MAX_REDIRECTS = 5;
+const MAX_HTML_INPUT_CHARS = 200_000;
 
 /** Map ISO 639-3 codes from franc to ISO 639-1 codes. Other languages map to "und" (unknown). */
 const ISO3_TO_ISO1: Record<string, string> = {
@@ -68,9 +69,10 @@ export function detectLanguage(text: string, fallback: string): string {
 
 /** Collapse white space and cap the length. Do not touch markup characters. */
 export function normalizeWhitespace(input: string, maxChars: number): string {
+  // Each regex is linear. A pattern like /\s*\n\s*/ is quadratic on long white-space runs.
   const collapsed = input
-    .replace(/[ \t\f\v\u00A0]+/g, " ")
-    .replace(/\s*\n\s*/g, "\n")
+    .replace(/[^\S\n]+/g, " ")
+    .replace(/ ?\n[ \n]*/g, "\n")
     .trim();
   return collapsed.length > maxChars ? collapsed.slice(0, maxChars).trimEnd() : collapsed;
 }
@@ -82,9 +84,13 @@ export function normalizeWhitespace(input: string, maxChars: number): string {
  * on its own. The document is not kept after the call.
  */
 export function cleanText(input: string, maxChars: number): string {
-  if (!/[<&]/.test(input)) return normalizeWhitespace(input, maxChars);
+  // A feed excerpt is small. Cut a huge input before the parser to bound time and memory.
+  const bounded =
+    input.length > MAX_HTML_INPUT_CHARS ? input.slice(0, MAX_HTML_INPUT_CHARS) : input;
+  if (!/[<&]/.test(bounded)) return normalizeWhitespace(bounded, maxChars);
   // Put a space around each tag so that adjacent blocks do not join into one word.
-  const spaced = input.replace(/<\/?[a-z!][^>]*>/gi, " $& ");
+  // [^<>]* stops at the next "<", so the scan stays linear.
+  const spaced = bounded.replace(/<\/?[a-z!][^<>]*>/gi, " $& ");
   const { document } = parseHTML(`<!doctype html><html><body>${spaced}</body></html>`);
   for (const node of Array.from(
     document.querySelectorAll("script, style") as Iterable<{ remove(): void }>,

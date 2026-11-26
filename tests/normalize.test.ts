@@ -400,3 +400,66 @@ describe("Normalizer", () => {
     expect(growthMb).toBeLessThan(150);
   }, 60_000);
 });
+
+describe("bounded-time matching", () => {
+  it("handles a hostile wildcard rule in linear time", () => {
+    const rules = { disallow: ["/" + "a*".repeat(18) + "b"], allow: [] };
+    const start = performance.now();
+    expect(isPathAllowed(rules, "/" + "a".repeat(36))).toBe(true);
+    expect(isPathAllowed(rules, "/" + "a".repeat(36) + "b")).toBe(false);
+    expect(performance.now() - start).toBeLessThan(500);
+  });
+
+  it("keeps wildcard and $ semantics", () => {
+    const rules = parseRobots(
+      "User-agent: *\nDisallow: /*.pdf$\nDisallow: /a*b*c\nAllow: /a/b/c",
+      userAgent,
+    );
+    expect(isPathAllowed(rules, "/x/file.pdf")).toBe(false);
+    expect(isPathAllowed(rules, "/x/file.pdf?x=1")).toBe(true);
+    expect(isPathAllowed(rules, "/a-b-c")).toBe(false);
+    expect(isPathAllowed(rules, "/a-c-b")).toBe(true);
+    expect(isPathAllowed(rules, "/a/b/c")).toBe(true);
+    expect(isPathAllowed({ disallow: ["/ab*b$"], allow: [] }, "/ab")).toBe(true);
+    expect(isPathAllowed({ disallow: ["/ab*b$"], allow: [] }, "/abxb")).toBe(false);
+  });
+
+  it("cuts long Disallow rules and drops long Allow rules", () => {
+    const long = "/" + "x".repeat(3_000);
+    const rules = parseRobots(`User-agent: *\nDisallow: ${long}\nAllow: ${long}`, userAgent);
+    expect(rules.disallow[0]).toHaveLength(2_000);
+    expect(rules.allow).toHaveLength(0);
+    expect(isPathAllowed(rules, long)).toBe(false);
+  });
+
+  it("denies all when the file has too many rules", () => {
+    const body =
+      "User-agent: *\n" + Array.from({ length: 1_001 }, (_, i) => `Disallow: /p${i}`).join("\n");
+    expect(isPathAllowed(parseRobots(body, userAgent), "/other")).toBe(false);
+  });
+
+  it("denies a path that is too long", () => {
+    expect(isPathAllowed({ disallow: [], allow: [] }, "/" + "a".repeat(5_000))).toBe(false);
+  });
+
+  it("collapses long white-space runs in linear time", () => {
+    const start = performance.now();
+    const out = cleanText("a" + " \r".repeat(50_000) + "b", 1_000);
+    expect(out).toBe("a b");
+    expect(cleanText("<a".repeat(100_000), 10)).toBeDefined();
+    expect(performance.now() - start).toBeLessThan(2_000);
+  });
+
+  it("treats robots.txt 429 as a transient deny", async () => {
+    let now = 0;
+    let status = 429;
+    const fetchImpl = vi.fn(async () =>
+      status === 429 ? new Response("", { status }) : new Response("User-agent: *\n"),
+    );
+    const cache = new RobotsCache({ userAgent, fetchImpl, failureTtlMs: 1_000, now: () => now });
+    expect(await cache.isAllowed("https://e.com/a")).toBe(false);
+    status = 200;
+    now = 2_000;
+    expect(await cache.isAllowed("https://e.com/a")).toBe(true);
+  });
+});

@@ -11,6 +11,11 @@ export interface RobotsOptions {
 }
 
 const MAX_ROBOTS_BYTES = 500_000;
+/** Limits that bound the matching cost for a hostile robots.txt. */
+export const MAX_RULES = 1_000;
+export const MAX_RULE_CHARS = 2_000;
+/** A path longer than this is denied. It bounds the matching cost. */
+export const MAX_PATH_CHARS = 4_096;
 
 /** Read a body up to `maxBytes`. Cancel the stream when the limit is reached. */
 export async function readCappedText(response: Response, maxBytes: number): Promise<string> {
@@ -22,8 +27,10 @@ export async function readCappedText(response: Response, maxBytes: number): Prom
   for (;;) {
     const { done, value } = await reader.read();
     if (done) break;
-    received += value.byteLength;
-    out += decoder.decode(value, { stream: true });
+    const chunk =
+      received + value.byteLength > maxBytes ? value.slice(0, maxBytes - received) : value;
+    received += chunk.byteLength;
+    out += decoder.decode(chunk, { stream: true });
     if (received >= maxBytes) {
       await reader.cancel();
       break;
@@ -60,15 +67,18 @@ export function parseRobots(body: string, userAgent: string): Rules {
     }
     lastWasAgent = false;
     if (!current || !value) continue;
-    if (key === "disallow") current.rules.disallow.push(value);
-    if (key === "allow") current.rules.allow.push(value);
+    // A long Disallow rule is cut. A cut rule blocks more, so it is safe.
+    // A long Allow rule is dropped. A cut Allow rule would allow more.
+    if (key === "disallow") current.rules.disallow.push(value.slice(0, MAX_RULE_CHARS));
+    if (key === "allow" && value.length <= MAX_RULE_CHARS) current.rules.allow.push(value);
   }
   const specific = groups.filter((g) => product && g.agents.includes(product));
   const chosen = specific.length > 0 ? specific : groups.filter((g) => g.agents.includes("*"));
-  return {
-    disallow: chosen.flatMap((g) => g.rules.disallow),
-    allow: chosen.flatMap((g) => g.rules.allow),
-  };
+  const disallow = chosen.flatMap((g) => g.rules.disallow);
+  const allow = chosen.flatMap((g) => g.rules.allow);
+  // Too many rules: fail closed. Do not trust a partial rule set.
+  if (disallow.length + allow.length > MAX_RULES) return { disallow: ["/"], allow: [] };
+  return { disallow, allow };
 }
 
 /**
@@ -90,15 +100,29 @@ export function normalizeEncoding(input: string): string {
   });
 }
 
-/** Match a normalized pattern against a normalized path. */
+/**
+ * Match a normalized pattern against a normalized path. `*` matches any characters.
+ * A final `$` anchors the end. No RegExp is built from rule text.
+ * Each wildcard segment is found at its first position. That is enough for a glob
+ * and the cost stays polynomial: no catastrophic backtracking.
+ */
 function matches(pattern: string, path: string): boolean {
   const anchored = pattern.endsWith("$");
   const body = anchored ? pattern.slice(0, -1) : pattern;
-  const source = body
-    .split("*")
-    .map((part) => part.replace(/[.+?^${}()|[\]\\]/g, "\\$&"))
-    .join(".*");
-  return new RegExp(`^${source}${anchored ? "$" : ""}`).test(path);
+  const parts = body.split("*");
+  const first = parts[0] ?? "";
+  if (parts.length === 1) return anchored ? path === first : path.startsWith(first);
+  if (!path.startsWith(first)) return false;
+  let pos = first.length;
+  for (let i = 1; i < parts.length - 1; i++) {
+    const part = parts[i] ?? "";
+    const idx = path.indexOf(part, pos);
+    if (idx < 0) return false;
+    pos = idx + part.length;
+  }
+  const last = parts[parts.length - 1] ?? "";
+  if (anchored) return path.length - last.length >= pos && path.endsWith(last);
+  return path.indexOf(last, pos) >= 0;
 }
 
 /**
@@ -106,6 +130,7 @@ function matches(pattern: string, path: string): boolean {
  * Both the rules and the path are normalized first. Rule length is the normalized length.
  */
 export function isPathAllowed(rules: Rules, rawPath: string): boolean {
+  if (rawPath.length > MAX_PATH_CHARS) return false;
   const path = normalizeEncoding(rawPath);
   let best = { length: -1, allowed: true };
   for (const raw of rules.disallow) {
@@ -171,7 +196,8 @@ export class RobotsCache {
         signal: AbortSignal.timeout(this.options.timeoutMs ?? 10_000),
         redirect: "follow",
       });
-      if (response.status >= 500) {
+      // 429 means "try later". Treat it like a server error: deny for a short time.
+      if (response.status >= 500 || response.status === 429) {
         await response.body?.cancel();
         return { rules: { disallow: ["/"], allow: [] }, transient: true };
       }
