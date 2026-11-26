@@ -150,7 +150,7 @@ export class RobotsCache {
       const body = await readCappedText(response, MAX_ROBOTS_BYTES);
       return { rules: parseRobots(body, this.options.userAgent), transient: false };
     } catch {
-      return { rules: null, transient: true };
+      return { rules: { disallow: ["/"], allow: [] }, transient: true };
     }
   }
 }

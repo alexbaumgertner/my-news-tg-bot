@@ -64,6 +64,13 @@ describe("helpers", () => {
     expect(cleanText("a".repeat(50), 10)).toHaveLength(10);
   });
 
+  it("keeps literal markup in the article text", () => {
+    const body = `<html><body><article><h1>Dialogs</h1><p>${"Use &lt;dialog&gt; rather than &lt;div&gt; for this component, and avoid inline code. ".repeat(6)}</p><p>Example: &lt;script&gt;alert(1)&lt;/script&gt; is shown as text in this long enough paragraph about web components.</p></article></body></html>`;
+    const result = extractMainText(body, "https://example.com/a", 5_000);
+    expect(result.text).toContain("Use <dialog> rather than <div> for this component");
+    expect(result.text).toContain("<script>alert(1)</script>");
+  });
+
   it("extracts main text and canonical link", () => {
     const result = extractMainText(html, "https://example.com/a", 300);
     expect(result.text).toContain("agentic coding");
@@ -105,6 +112,36 @@ describe("RobotsCache", () => {
     expect(await cache.isAllowed("https://example.com/x")).toBe(true);
     expect(cancelled).toBe(true);
     expect(pulled).toBeLessThan(20);
+  });
+
+  it("denies the origin when robots.txt cannot be fetched, then retries after the TTL", async () => {
+    let fail = true;
+    const fetchImpl = vi.fn(async () => {
+      if (fail) throw new TypeError("fetch failed");
+      return new Response("User-agent: *\nAllow: /\n");
+    }) as unknown as typeof fetch;
+    let time = 0;
+    const cache = new RobotsCache({ userAgent, fetchImpl, failureTtlMs: 1_000, now: () => time });
+    expect(await cache.isAllowed("https://example.com/x")).toBe(false);
+    fail = false;
+    time = 500;
+    expect(await cache.isAllowed("https://example.com/x")).toBe(false);
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    time = 1_500;
+    expect(await cache.isAllowed("https://example.com/x")).toBe(true);
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not request the page when robots.txt fetch rejects", async () => {
+    const fetchImpl = vi.fn(async (input: string | URL | Request) => {
+      if (String(input).endsWith("/robots.txt")) throw new TypeError("fetch failed");
+      return new Response(html, { headers: { "content-type": "text/html" } });
+    }) as unknown as typeof fetch;
+    const n = new Normalizer({ userAgent, fetchImpl });
+    const [item] = await n.normalizeAll([raw({ text: "short snippet" })]);
+    expect(item!.text).toBe("short snippet");
+    const urls = vi.mocked(fetchImpl).mock.calls.map((c) => String(c[0]));
+    expect(urls.every((u) => u.endsWith("/robots.txt"))).toBe(true);
   });
 
   it("retries a transient robots.txt failure after the TTL", async () => {

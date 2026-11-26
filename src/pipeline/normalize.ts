@@ -66,7 +66,16 @@ export function detectLanguage(text: string, fallback: string): string {
   return ISO3_TO_ISO1[code] ?? fallback;
 }
 
-/** Remove tags and collapse white space. Feed snippets often contain HTML. */
+/** Collapse white space and cap the length. Do not touch markup characters. */
+export function normalizeWhitespace(input: string, maxChars: number): string {
+  const collapsed = input
+    .replace(/[ \t\f\v\u00A0]+/g, " ")
+    .replace(/\s*\n\s*/g, "\n")
+    .trim();
+  return collapsed.length > maxChars ? collapsed.slice(0, maxChars).trimEnd() : collapsed;
+}
+
+/** Remove tags and collapse white space. Use it for feed text, which often contains HTML. */
 export function cleanText(input: string, maxChars: number): string {
   const stripped = /<[a-z!/][^>]*>/i.test(input)
     ? input
@@ -79,11 +88,7 @@ export function cleanText(input: string, maxChars: number): string {
         .replace(/&quot;/g, '"')
         .replace(/&#39;/g, "'")
     : input;
-  const collapsed = stripped
-    .replace(/[ \t\f\v\u00A0]+/g, " ")
-    .replace(/\s*\n\s*/g, "\n")
-    .trim();
-  return collapsed.length > maxChars ? collapsed.slice(0, maxChars).trimEnd() : collapsed;
+  return normalizeWhitespace(stripped, maxChars);
 }
 
 interface Extracted {
@@ -114,7 +119,8 @@ export function extractMainText(
   const article = new Readability(
     document as unknown as ConstructorParameters<typeof Readability>[0],
   ).parse();
-  const text = article?.textContent ? cleanText(article.textContent, maxChars) : "";
+  // textContent is plain text already. Do not strip markup again.
+  const text = article?.textContent ? normalizeWhitespace(article.textContent, maxChars) : "";
   return { text: text || null, canonicalLink };
 }
 
