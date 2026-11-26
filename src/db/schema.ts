@@ -92,6 +92,7 @@ export const items = pgTable(
     text: text("text"),
     contentHash: text("content_hash").notNull(),
     language: text("language"),
+    metadata: jsonb("metadata").$type<Record<string, unknown>>(),
     publishedAt: timestamp("published_at", { withTimezone: true }),
     fetchedAt: timestamp("fetched_at", { withTimezone: true }).notNull().defaultNow(),
     embedding: vector("embedding", { dimensions: EMBEDDING_DIMENSIONS }),
