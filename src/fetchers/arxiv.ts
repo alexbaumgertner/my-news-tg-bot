@@ -140,7 +140,14 @@ export class ArxivFetcher implements Fetcher {
         const text = [authors.length > 0 ? `Authors: ${authors.join(", ")}` : "", abstract]
           .filter(Boolean)
           .join("\n\n");
-        items.push({ url, title, text: text || null, publishedAt, language: source.language });
+        items.push({
+          url,
+          title,
+          text: text || null,
+          textFormat: "text",
+          publishedAt,
+          language: source.language,
+        });
       }
       if (reachedOld || entries.length < PAGE_SIZE) break;
     }

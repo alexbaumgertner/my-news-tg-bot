@@ -3,6 +3,7 @@ import type { Logger } from "pino";
 import type { Db } from "../db/client.js";
 import { items, sources } from "../db/schema.js";
 import { canonicalizeUrl, contentHash } from "./normalize.js";
+import type { Normalizer } from "../pipeline/normalize.js";
 import type { Fetcher } from "./types.js";
 
 const UNIT_MS = { m: 60_000, h: 3_600_000, d: 86_400_000 } as const;
@@ -29,6 +30,8 @@ export interface CollectorOptions {
   userId: number;
   fetchers: Record<string, Fetcher>;
   logger: Logger;
+  /** Extracts full text, language and canonical URL. Without it, items are stored as fetched. */
+  normalizer?: Normalizer;
   now?: () => Date;
 }
 
@@ -78,19 +81,27 @@ export async function runCollector(options: CollectorOptions): Promise<SourceRep
       report.fetched = result.items.length;
       if (result.notModified) report.status = "not_modified";
       if (result.items.length > 0) {
+        const rows = options.normalizer
+          ? await options.normalizer.normalizeAll(result.items)
+          : result.items.map((item) => ({
+              ...item,
+              metadata: item.metadata ?? null,
+              canonicalUrl: canonicalizeUrl(item.url),
+              contentHash: contentHash(item.title, item.text),
+            }));
         const inserted = await db
           .insert(items)
           .values(
-            result.items.map((item) => ({
+            rows.map((item) => ({
               userId,
               sourceId: row.id,
               url: item.url,
-              canonicalUrl: canonicalizeUrl(item.url),
+              canonicalUrl: item.canonicalUrl,
               title: item.title,
               text: item.text,
-              contentHash: contentHash(item.title, item.text),
+              contentHash: item.contentHash,
               language: item.language,
-              metadata: item.metadata ?? null,
+              metadata: item.metadata,
               publishedAt: item.publishedAt,
               fetchedAt: started,
             })),

@@ -167,7 +167,7 @@ The digest also trains my English from B2 toward C1. This is an example of *cont
 | Language | TypeScript, Node.js 26 LTS, pnpm | My main stack; 26 is the Active LTS line (end of life April 2029) |
 | Telegram bot | grammY | Modern, typed, good plugins |
 | Reading Telegram channels (v1) | GramJS (MTProto) or the `t.me/s/` web preview | The Bot API cannot read other channels |
-| Parsing | rss-parser, @mozilla/readability + jsdom, fetch with retries | Light dependencies, no headless browser |
+| Parsing | rss-parser, @mozilla/readability + linkedom, fetch with retries | Light dependencies, no headless browser |
 | LLM | Anthropic API, the cheapest current model (Haiku class) for both scoring and writing; a provider adapter so the model is one config value | Budget is $5/month (decided). Prompt caching for the profile, Batch API for scoring between digests |
 | Embeddings | Hosted API (Voyage or similar) | Local models are too heavy for 8 GB RAM |
 | Database | PostgreSQL + pgvector, Drizzle ORM | One database for rows and vectors |

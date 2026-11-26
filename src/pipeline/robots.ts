@@ -1,0 +1,214 @@
+export interface RobotsOptions {
+  userAgent: string;
+  fetchImpl?: typeof fetch;
+  timeoutMs?: number;
+  /** How long (ms) a transient failure stays cached. Default: 5 minutes. */
+  failureTtlMs?: number;
+  /** How long (ms) a successful result stays cached. Default: 24 hours. */
+  cacheTtlMs?: number;
+  /** Clock in ms. Inject it in tests. */
+  now?: () => number;
+}
+
+const MAX_ROBOTS_BYTES = 500_000;
+/** Limits that bound the matching cost for a hostile robots.txt. */
+export const MAX_RULES = 1_000;
+export const MAX_RULE_CHARS = 2_000;
+/** A path longer than this is denied. It bounds the matching cost. */
+export const MAX_PATH_CHARS = 4_096;
+
+/** Read a body up to `maxBytes`. Cancel the stream when the limit is reached. */
+export async function readCappedText(response: Response, maxBytes: number): Promise<string> {
+  if (!response.body) return "";
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let received = 0;
+  let out = "";
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    const chunk =
+      received + value.byteLength > maxBytes ? value.slice(0, maxBytes - received) : value;
+    received += chunk.byteLength;
+    out += decoder.decode(chunk, { stream: true });
+    if (received >= maxBytes) {
+      await reader.cancel();
+      break;
+    }
+  }
+  return out + decoder.decode();
+}
+
+interface Rules {
+  disallow: string[];
+  allow: string[];
+}
+
+/** Parse the rules of robots.txt that apply to our agent. The most specific group wins. */
+export function parseRobots(body: string, userAgent: string): Rules {
+  const product = userAgent.split(/[/\s]/)[0]?.toLowerCase() ?? "";
+  const groups: { agents: string[]; rules: Rules }[] = [];
+  let current: { agents: string[]; rules: Rules } | null = null;
+  let lastWasAgent = false;
+  for (const rawLine of body.split(/\r?\n/)) {
+    const line = rawLine.replace(/#.*$/, "").trim();
+    const idx = line.indexOf(":");
+    if (idx < 0) continue;
+    const key = line.slice(0, idx).trim().toLowerCase();
+    const value = line.slice(idx + 1).trim();
+    if (key === "user-agent") {
+      if (!current || !lastWasAgent) {
+        current = { agents: [], rules: { disallow: [], allow: [] } };
+        groups.push(current);
+      }
+      current.agents.push(value.toLowerCase());
+      lastWasAgent = true;
+      continue;
+    }
+    lastWasAgent = false;
+    if (!current || !value) continue;
+    // A long Disallow rule is cut. A cut rule blocks more, so it is safe.
+    // A long Allow rule is dropped. A cut Allow rule would allow more.
+    if (key === "disallow") current.rules.disallow.push(value.slice(0, MAX_RULE_CHARS));
+    if (key === "allow" && value.length <= MAX_RULE_CHARS) current.rules.allow.push(value);
+  }
+  const specific = groups.filter((g) => product && g.agents.includes(product));
+  const chosen = specific.length > 0 ? specific : groups.filter((g) => g.agents.includes("*"));
+  const disallow = chosen.flatMap((g) => g.rules.disallow);
+  const allow = chosen.flatMap((g) => g.rules.allow);
+  // Too many rules: fail closed. Do not trust a partial rule set.
+  if (disallow.length + allow.length > MAX_RULES) return { disallow: ["/"], allow: [] };
+  return { disallow, allow };
+}
+
+/**
+ * Normalize percent-encoding as in RFC 9309. Encode non-ASCII characters as UTF-8.
+ * Decode escapes of unreserved characters. Upper-case the hex digits of other escapes.
+ * Keep encoded reserved characters (for example %2F) encoded.
+ */
+export function normalizeEncoding(input: string): string {
+  const encoded = input.replace(/\P{ASCII}+/gu, (run) => {
+    try {
+      return encodeURIComponent(run);
+    } catch {
+      return run;
+    }
+  });
+  return encoded.replace(/%([0-9a-fA-F]{2})/g, (_m, hex: string) => {
+    const char = String.fromCharCode(parseInt(hex, 16));
+    return /[A-Za-z0-9\-._~]/.test(char) ? char : `%${hex.toUpperCase()}`;
+  });
+}
+
+/**
+ * Match a normalized pattern against a normalized path. `*` matches any characters.
+ * A final `$` anchors the end. No RegExp is built from rule text.
+ * Each wildcard segment is found at its first position. That is enough for a glob
+ * and the cost stays polynomial: no catastrophic backtracking.
+ */
+function matches(pattern: string, path: string): boolean {
+  const anchored = pattern.endsWith("$");
+  const body = anchored ? pattern.slice(0, -1) : pattern;
+  const parts = body.split("*");
+  const first = parts[0] ?? "";
+  if (parts.length === 1) return anchored ? path === first : path.startsWith(first);
+  if (!path.startsWith(first)) return false;
+  let pos = first.length;
+  for (let i = 1; i < parts.length - 1; i++) {
+    const part = parts[i] ?? "";
+    const idx = path.indexOf(part, pos);
+    if (idx < 0) return false;
+    pos = idx + part.length;
+  }
+  const last = parts[parts.length - 1] ?? "";
+  if (anchored) return path.length - last.length >= pos && path.endsWith(last);
+  return path.indexOf(last, pos) >= 0;
+}
+
+/**
+ * Check a path against rules. The longest matching rule wins. Allow wins a tie.
+ * Both the rules and the path are normalized first. Rule length is the normalized length.
+ */
+export function isPathAllowed(rules: Rules, rawPath: string): boolean {
+  if (rawPath.length > MAX_PATH_CHARS) return false;
+  const path = normalizeEncoding(rawPath);
+  let best = { length: -1, allowed: true };
+  for (const raw of rules.disallow) {
+    const p = normalizeEncoding(raw);
+    if (matches(p, path) && p.length > best.length) best = { length: p.length, allowed: false };
+  }
+  for (const raw of rules.allow) {
+    const p = normalizeEncoding(raw);
+    if (matches(p, path) && p.length >= best.length) best = { length: p.length, allowed: true };
+  }
+  return best.allowed;
+}
+
+interface Loaded {
+  rules: Rules | null;
+  /** True after a 5xx response, a network error or a timeout. */
+  transient: boolean;
+}
+
+interface Entry {
+  pending: Promise<Loaded>;
+  /** Time (ms) when the entry expires. Null while the lookup is pending. */
+  expiresAt: number | null;
+}
+
+const DEFAULT_FAILURE_TTL_MS = 5 * 60_000;
+const DEFAULT_CACHE_TTL_MS = 24 * 60 * 60_000;
+
+/**
+ * Fetch and cache robots.txt once per origin. A missing file allows all.
+ * A successful result is cached for 24 hours (RFC 9309). A transient failure is cached
+ * for a short time only. Then the next check retries.
+ */
+export class RobotsCache {
+  private readonly cache = new Map<string, Entry>();
+
+  constructor(private readonly options: RobotsOptions) {}
+
+  async isAllowed(url: string): Promise<boolean> {
+    const parsed = new URL(url);
+    const now = (this.options.now ?? Date.now)();
+    let entry = this.cache.get(parsed.origin);
+    if (!entry || (entry.expiresAt !== null && now >= entry.expiresAt)) {
+      const pending = this.load(parsed.origin);
+      entry = { pending, expiresAt: null };
+      this.cache.set(parsed.origin, entry);
+      const created = entry;
+      const failureTtl = this.options.failureTtlMs ?? DEFAULT_FAILURE_TTL_MS;
+      const cacheTtl = this.options.cacheTtlMs ?? DEFAULT_CACHE_TTL_MS;
+      void pending.then((loaded) => {
+        const ttl = loaded.transient ? failureTtl : cacheTtl;
+        created.expiresAt = (this.options.now ?? Date.now)() + ttl;
+      });
+    }
+    const { rules } = await entry.pending;
+    return rules ? isPathAllowed(rules, parsed.pathname + parsed.search) : true;
+  }
+
+  private async load(origin: string): Promise<Loaded> {
+    try {
+      const response = await (this.options.fetchImpl ?? fetch)(`${origin}/robots.txt`, {
+        headers: { "User-Agent": this.options.userAgent },
+        signal: AbortSignal.timeout(this.options.timeoutMs ?? 10_000),
+        redirect: "follow",
+      });
+      // 429 means "try later". Treat it like a server error: deny for a short time.
+      if (response.status >= 500 || response.status === 429) {
+        await response.body?.cancel();
+        return { rules: { disallow: ["/"], allow: [] }, transient: true };
+      }
+      if (!response.ok) {
+        await response.body?.cancel();
+        return { rules: null, transient: false };
+      }
+      const body = await readCappedText(response, MAX_ROBOTS_BYTES);
+      return { rules: parseRobots(body, this.options.userAgent), transient: false };
+    } catch {
+      return { rules: { disallow: ["/"], allow: [] }, transient: true };
+    }
+  }
+}
