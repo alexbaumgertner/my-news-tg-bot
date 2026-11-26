@@ -42,6 +42,7 @@ export const sourceSchema = z.object({
   active: z.boolean(),
   verified: z.boolean().optional(),
   notes: z.string().optional(),
+  initial_lookback_days: z.number().int().min(1).max(3650).optional(),
 });
 
 export const sourcesFileSchema = z.object({ sources: z.array(sourceSchema) });

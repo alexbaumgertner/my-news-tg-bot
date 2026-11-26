@@ -21,8 +21,8 @@ const source: FetchSource = {
   lastModified: null,
 };
 
-function makeFetcher(bodies: string[], apiKey?: string) {
-  let clock = 1_000;
+function makeFetcher(bodies: string[], apiKey?: string, start = 1_000) {
+  let clock = start;
   const sleep = vi.fn(async (ms: number) => {
     clock += ms;
   });
@@ -189,6 +189,35 @@ describe("PubmedFetcher", () => {
       '<?xml version="1.0"?><eFetchResult><ERROR>Invalid db name</ERROR></eFetchResult>';
     const { fetcher } = makeFetcher([esearchJson, error]);
     await expect(fetcher.fetch(source, null)).rejects.toThrow(/PubmedArticleSet/);
+  });
+
+  it("bounds the first run to the default lookback window", async () => {
+    const start = Date.UTC(2026, 10, 26);
+    const { fetcher, urls } = makeFetcher([esearchJson, efetchXml], undefined, start);
+    // The real archive count is 4997. The windowed count is small, so the run completes.
+    const result = await fetcher.fetch(source, null);
+    expect(result.items).toHaveLength(4);
+    const params = new URL(urls()[0]!).searchParams;
+    expect(params.get("datetype")).toBe("edat");
+    expect(params.get("mindate")).toBe("2026/08/28");
+    expect(params.get("maxdate")).toBe("3000");
+  });
+
+  it("uses initialLookbackDays of the source on the first run", async () => {
+    const start = Date.UTC(2026, 10, 26);
+    const { fetcher, urls } = makeFetcher([esearchJson, efetchXml], undefined, start);
+    await fetcher.fetch({ ...source, initialLookbackDays: 7 }, null);
+    expect(new URL(urls()[0]!).searchParams.get("mindate")).toBe("2026/11/19");
+  });
+
+  it("keeps the given since date on incremental runs", async () => {
+    const { fetcher, urls } = makeFetcher(
+      [esearchJson, efetchXml],
+      undefined,
+      Date.UTC(2026, 10, 26),
+    );
+    await fetcher.fetch({ ...source, initialLookbackDays: 7 }, new Date(Date.UTC(2026, 10, 1)));
+    expect(new URL(urls()[0]!).searchParams.get("mindate")).toBe("2026/11/01");
   });
 
   it("fails on an invalid esearch answer", async () => {

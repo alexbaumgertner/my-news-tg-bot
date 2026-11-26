@@ -71,6 +71,7 @@ export async function runCollector(options: CollectorOptions): Promise<SourceRep
           language: row.language,
           etag: row.etag,
           lastModified: row.lastModified,
+          initialLookbackDays: row.initialLookbackDays,
         },
         since,
       );

@@ -18,6 +18,7 @@ export function sourceToRow(source: Source, userId: number): typeof sources.$inf
     active: source.active,
     verified: source.verified ?? null,
     notes: source.notes ?? null,
+    initialLookbackDays: source.initial_lookback_days ?? null,
   };
 }
 
@@ -42,6 +43,7 @@ export async function seedSources(db: Db, configDir: string, userId: number): Pr
         active: sql`excluded.active`,
         verified: sql`excluded.verified`,
         notes: sql`excluded.notes`,
+        initialLookbackDays: sql`excluded.initial_lookback_days`,
         updatedAt: sql`now()`,
       },
     });

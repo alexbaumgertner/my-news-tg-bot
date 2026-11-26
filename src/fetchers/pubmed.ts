@@ -17,6 +17,10 @@ const esearchSchema = z.object({
   }),
 });
 
+/** First-run window when the source sets no `initial_lookback_days`. */
+export const DEFAULT_INITIAL_LOOKBACK_DAYS = 90;
+const DAY_MS = 86_400_000;
+
 /** Safety limit. A search that needs more pages fails instead of losing records. */
 const MAX_PAGES = 50;
 
@@ -265,6 +269,9 @@ export class PubmedFetcher implements Fetcher {
   async fetch(source: FetchSource, since: Date | null): Promise<FetchResult> {
     const { apiKey } = this.options;
     const items = new Map<string, RawItem>();
+    // The first run has no `since`. Search a bounded window, not the whole archive.
+    const lookbackDays = source.initialLookbackDays ?? DEFAULT_INITIAL_LOOKBACK_DAYS;
+    const window = since ?? new Date(this.now() - lookbackDays * DAY_MS);
     let retstart = 0;
 
     // Read every page of the date window. The caller advances lastSuccessAt only after all pages.
@@ -272,7 +279,7 @@ export class PubmedFetcher implements Fetcher {
       if (page >= MAX_PAGES) {
         throw new Error(`PubMed search has more than ${MAX_PAGES} pages: ${source.slug}`);
       }
-      const search = await this.get(esearchUrl(source.url, since, apiKey, retstart));
+      const search = await this.get(esearchUrl(source.url, window, apiKey, retstart));
       const { count, idlist } = esearchSchema.parse(JSON.parse(search.body)).esearchresult;
       if (idlist.length === 0) break;
 
