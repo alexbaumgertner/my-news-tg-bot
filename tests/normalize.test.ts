@@ -90,6 +90,26 @@ describe("robots", () => {
     expect(isPathAllowed(rules, "/private/open/x")).toBe(true);
     expect(isPathAllowed(rules, "/public")).toBe(true);
   });
+
+  it("decodes percent-encoded unreserved characters before matching", () => {
+    const rules = parseRobots("User-agent: *\nDisallow: /private\n", userAgent);
+    expect(isPathAllowed(rules, "/%70rivate/news")).toBe(false);
+  });
+
+  it("matches non-ASCII rule paths against encoded URLs", () => {
+    const rules = parseRobots("User-agent: *\nDisallow: /café\n", userAgent);
+    expect(isPathAllowed(rules, "/caf%C3%A9/news")).toBe(false);
+    expect(isPathAllowed(rules, "/caf%c3%a9/news")).toBe(false);
+  });
+
+  it("does not decode encoded reserved characters", () => {
+    const rules = parseRobots("User-agent: *\nDisallow: /a/b\n", userAgent);
+    expect(isPathAllowed(rules, "/a%2Fb")).toBe(true);
+    expect(isPathAllowed(rules, "/a%2fb")).toBe(true);
+    const encodedRule = parseRobots("User-agent: *\nDisallow: /a%2Fb\n", userAgent);
+    expect(isPathAllowed(encodedRule, "/a%2fb")).toBe(false);
+    expect(isPathAllowed(encodedRule, "/a/b")).toBe(true);
+  });
 });
 
 describe("RobotsCache", () => {

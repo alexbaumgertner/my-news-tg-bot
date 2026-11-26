@@ -69,7 +69,28 @@ export function parseRobots(body: string, userAgent: string): Rules {
   };
 }
 
-function matches(pattern: string, path: string): boolean {
+/**
+ * Normalize percent-encoding as in RFC 9309. Encode non-ASCII characters as UTF-8.
+ * Decode escapes of unreserved characters. Upper-case the hex digits of other escapes.
+ * Keep encoded reserved characters (for example %2F) encoded.
+ */
+export function normalizeEncoding(input: string): string {
+  const encoded = input.replace(/\P{ASCII}+/gu, (run) => {
+    try {
+      return encodeURIComponent(run);
+    } catch {
+      return run;
+    }
+  });
+  return encoded.replace(/%([0-9a-fA-F]{2})/g, (_m, hex: string) => {
+    const char = String.fromCharCode(parseInt(hex, 16));
+    return /[A-Za-z0-9\-._~]/.test(char) ? char : `%${hex.toUpperCase()}`;
+  });
+}
+
+function matches(rawPattern: string, rawPath: string): boolean {
+  const pattern = normalizeEncoding(rawPattern);
+  const path = normalizeEncoding(rawPath);
   const anchored = pattern.endsWith("$");
   const body = anchored ? pattern.slice(0, -1) : pattern;
   const source = body
