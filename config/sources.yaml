@@ -11,6 +11,7 @@
 #   poll_interval how often to poll (e.g. 2h)
 #   active        false = skipped by the collector
 #   verified      true only after a real request returned a valid feed (issue #2)
+#   initial_lookback_days  optional. Days to look back on the first run of a pubmed source (default 90).
 #   notes         anything an agent or I should know
 #
 # These 18 sources were provided by me and checked on 2026-11-26 in a browser.

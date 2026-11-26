@@ -23,6 +23,7 @@ const envSchema = z.object({
   LLM_MONTHLY_LIMIT_USD: z.coerce.number().positive().default(5),
   EMBEDDINGS_API_KEY: z.string().optional(),
   HTTP_USER_AGENT: z.string().min(1).default("my-news-tg-bot/0.1"),
+  NCBI_API_KEY: z.string().optional(),
   HN_MIN_SCORE: z.coerce.number().int().min(0).default(100),
   CONFIG_DIR: z.string().min(1).default("./config"),
 });
@@ -41,6 +42,7 @@ export const sourceSchema = z.object({
   active: z.boolean(),
   verified: z.boolean().optional(),
   notes: z.string().optional(),
+  initial_lookback_days: z.number().int().min(1).max(3650).optional(),
 });
 
 export const sourcesFileSchema = z.object({ sources: z.array(sourceSchema) });

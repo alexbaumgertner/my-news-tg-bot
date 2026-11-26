@@ -19,6 +19,8 @@ export interface FetchSource {
   etag: string | null;
   /** Last-Modified header from the last successful response, if any. */
   lastModified: string | null;
+  /** Days to look back on the first run. Used by fetchers that search an archive. */
+  initialLookbackDays?: number | null;
 }
 
 export interface FetchResult {

@@ -50,6 +50,7 @@ Each source is defined in `config/sources.yaml` with these fields:
 - `trust` (1–5)
 - `poll_interval`
 - `active`
+- `initial_lookback_days` (optional, default 90): on the first run, a `pubmed` source searches only this many days back. Later runs search from the last success. This keeps the first search short, because the whole archive can have thousands of records.
 
 The list below is a starting point. In Phase 0 each entry is checked to see whether it has RSS or an API or needs page parsing.
 

@@ -43,6 +43,7 @@ export const sources = pgTable(
     active: boolean("active").notNull(),
     verified: boolean("verified"),
     notes: text("notes"),
+    initialLookbackDays: integer("initial_lookback_days"),
     lastFetchedAt: timestamp("last_fetched_at", { withTimezone: true }),
     lastSuccessAt: timestamp("last_success_at", { withTimezone: true }),
     lastFailureAt: timestamp("last_failure_at", { withTimezone: true }),

@@ -1,0 +1,1 @@
+ALTER TABLE "sources" ADD COLUMN "initial_lookback_days" integer;
