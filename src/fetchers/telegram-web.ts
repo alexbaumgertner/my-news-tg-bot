@@ -197,17 +197,16 @@ export class TelegramWebFetcher implements Fetcher {
         { ...this.options.http, beforeAttempt: () => this.throttle() },
       );
       const parsed = parseTelegramPreview(response.body);
-      if (page === 1) {
-        if (parsed.messageBlocks === 0) {
-          throw new Error(
-            `No posts found in ${source.url}. The web preview may be disabled or the layout changed.`,
-          );
-        }
-        if (parsed.malformedBlocks === parsed.messageBlocks) {
-          throw new Error(
-            `Layout change in ${source.url}: ${parsed.messageBlocks} message blocks, none with a post id and a date.`,
-          );
-        }
+      // Validate every page. An invalid older page is never the end of history.
+      if (parsed.messageBlocks === 0) {
+        throw new Error(
+          `No posts found in ${pageUrl}. The web preview may be disabled or the layout changed.`,
+        );
+      }
+      if (parsed.malformedBlocks === parsed.messageBlocks) {
+        throw new Error(
+          `Layout change in ${pageUrl}: ${parsed.messageBlocks} message blocks, none with a post id and a date.`,
+        );
       }
       for (const post of parsed.posts) {
         if (seen.has(post.id)) continue;

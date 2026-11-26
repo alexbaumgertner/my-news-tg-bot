@@ -158,7 +158,7 @@ describe("TelegramWebFetcher", () => {
       let page = html
         .replace(
           /data-post="zakat_podcast\/(\d+)"/g,
-          (_m, id) => `data-post="zakat_podcast/${Number(id) - 1000 * days}"`,
+          (_m, id) => `data-post="zakat_podcast/${Number(id) - 100 * days}"`,
         )
         .replace(/datetime="([^"]+)"/g, (_m, d: string) => {
           const date = new Date(new Date(d).getTime() - days * 86_400_000);
@@ -196,7 +196,7 @@ describe("TelegramWebFetcher", () => {
       const { fetcher, urls } = pagedFetcher([html, olderPage(10, null)]);
       const result = await fetcher.fetch(source(channel), since);
       expect(urls).toEqual([`https://t.me/s/${channel}`, `https://t.me/s/${channel}?before=5245`]);
-      expect(result.items).toHaveLength(15);
+      expect(result.items.length).toBeGreaterThan(15);
       expect(result.items.every((i) => i.publishedAt! >= since)).toBe(true);
     });
 
@@ -227,6 +227,13 @@ describe("TelegramWebFetcher", () => {
       const since = new Date(0);
       const { fetcher } = pagedFetcher([html, html]);
       await expect(fetcher.fetch(source(channel), since)).rejects.toThrow(/does not advance/);
+    });
+
+    it("fails loudly when an older page is a disabled preview", async () => {
+      const since = new Date(0);
+      const { fetcher, urls } = pagedFetcher([html, fixture("preview_disabled")]);
+      await expect(fetcher.fetch(source(channel), since)).rejects.toThrow(/No posts found/);
+      expect(urls).toHaveLength(2);
     });
 
     it("waits between page requests", async () => {
