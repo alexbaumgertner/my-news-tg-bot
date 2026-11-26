@@ -1,0 +1,88 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<feed xmlns:opensearch="http://a9.com/-/spec/opensearch/1.1/" xmlns:arxiv="http://arxiv.org/schemas/atom" xmlns="http://www.w3.org/2005/Atom">
+  <id>https://arxiv.org/api/K1XUj+gJ/9uDaMfEoz4daDjy6oA</id>
+  <title>arXiv Query: search_query=cat:cs.HC&amp;id_list=&amp;start=0&amp;max_results=3</title>
+  <updated>2026-11-26T15:04:24Z</updated>
+  <link href="https://arxiv.org/api/query?search_query=cat:cs.HC&amp;start=0&amp;max_results=3&amp;id_list=" type="application/atom+xml"/>
+  <opensearch:itemsPerPage>3</opensearch:itemsPerPage>
+  <opensearch:totalResults>34408</opensearch:totalResults>
+  <opensearch:startIndex>0</opensearch:startIndex>
+  <entry>
+    <id>http://arxiv.org/abs/2611.34945v1</id>
+    <title>MidasTUI: Instant Tangible User Interfaces for Wearable Displays using Everyday Objects</title>
+    <updated>2026-11-25T18:59:59Z</updated>
+    <link href="https://arxiv.org/abs/2611.34945v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2611.34945v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>While wearable displays can bring digital workspaces anywhere, interaction remains limited by mid-air gestures that lack tactile feedback and induce fatigue, or controllers that are cumbersome to carry. We present MidasTUI, a system that instantly transforms arbitrary everyday objects into opportunistic tangible user interfaces through brief interaction demonstrations. For example, a user can slide an earbud case across a table as a mouse, enabling opportunistic interaction without carrying a dedicated input device. MidasTUI detects when a user is holding and moving an object using the wearable display camera and a Transformer-based temporal classifier. It then infers the intended input modality (e.g., slider, mouse, keypad) from hand movement and maps the tracked hand-object interaction to an application function. Our evaluations demonstrate reliable cross-object and cross-user generalization. A comparative user study further shows that grounding interaction in everyday objects reduces physical burden and improves perceived usability and control relative to mid-air interaction.</summary>
+    <category term="cs.HC" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-11-25T18:59:59Z</published>
+    <arxiv:comment>Project page link: https://midastui.github.io/</arxiv:comment>
+    <arxiv:primary_category term="cs.HC"/>
+    <author>
+      <name>Wen Ying</name>
+    </author>
+    <author>
+      <name>Xuweiyi Chen</name>
+    </author>
+    <author>
+      <name>Zezhou Cheng</name>
+    </author>
+    <author>
+      <name>Seongkook Heo</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2611.34673v1</id>
+    <title>Supporting Without Taking Over: AI Support in Gratitude Writing</title>
+    <updated>2026-11-25T16:38:14Z</updated>
+    <link href="https://arxiv.org/abs/2611.34673v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2611.34673v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Gratitude writing can support well-being, but independent practice may lack guidance. Generative AI could help while shaping reflection, agency, and ownership. We investigated how gratitude-writing format and AI-assistance mode influence well-being and writing experiences. In a 2x2 between-subjects study (N=401), participants completed a gratitude reflection or a gratitude letter using two AI-assistance modes: scaffolding, which provided reflective questions after inactivity, or co-writing, which offered inline text suggestions. Participants' well-being improved after using our AI-assisted gratitude-writing system, consistent with the activity's intended benefits. However, participants' experiences revealed a trade-off between the AI-support types: co-writing received higher usability ratings, yet its immediacy could disrupt writing, and greater suggestion acceptance was associated with weaker perceived agency. Scaffolding supported stronger perceived human ownership but was sometimes overlooked. These findings extend human-AI writing research beyond productivity and text quality by showing how AI involvement shapes psychological outcomes and the experience of self-guided, emotionally meaningful writing.</summary>
+    <category term="cs.HC" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-11-25T16:38:14Z</published>
+    <arxiv:primary_category term="cs.HC"/>
+    <author>
+      <name>Thu Bui</name>
+    </author>
+    <author>
+      <name>Shashi Salavath</name>
+    </author>
+    <author>
+      <name>Hillary Merzdorf</name>
+    </author>
+    <author>
+      <name>Louis Tay</name>
+    </author>
+    <author>
+      <name>Sooyeon Jeong</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2611.34576v1</id>
+    <title>Procedure Inference as Memory: Learning Recruiter Decision Procedures from OKF-Structured Episodes in Multi-Session Hiring Assistants</title>
+    <updated>2026-11-25T15:41:52Z</updated>
+    <link href="https://arxiv.org/abs/2611.34576v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2611.34576v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Multi-session hiring assistants must infer evolving recruiter preferences and decision patterns across projects and time. We introduce Open Knowledge Format (OKF)-indexed episodic memory to organize interactions and retrieve related events through their lineage. We also introduce Procedure Memory, which learns reusable decision procedures from these episodes through prompted reflection or reinforcement learning. We compare these approaches with no memory, full-history context, and conversation search, and evaluate Jev-class models for index navigation and GPT-5.6 Luna as a lower-cost alternative to GPT-5.4.
+  In our evaluation, OKF-indexed retrieval achieves low-priority preference F1 scores of 0.93-0.95 at medium and high preference overlap between hiring projects. It significantly outperforms full-history context and conversation search in both settings, and no memory at high overlap, while using 69% fewer context tokens than full history. Procedure Memory reduces conversational turns by up to 39% relative to no memory. Qualitative and long-horizon evaluations provide evidence of temporal reasoning, with RL-learned procedures achieving 60% on both correct abstention and exact-field identification. Jev-class models improve conversational efficiency but more frequently miss temporally relevant evidence, highlighting the importance of evidence selection.
+  On PersonaMem-v2, Procedure Memory with OKF retrieval achieves 50.2% accuracy versus 48.6% for full-history context and 29.0% for no memory, using 90.5% fewer reader input tokens than full history. GPT-5.6 Luna performs comparably to GPT-5.4 at lower cost. These findings highlight the value of structured episodic memory and learned decision procedures for efficient personalization and temporal reasoning.</summary>
+    <category term="cs.AI" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.HC" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.IR" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-11-25T15:41:52Z</published>
+    <arxiv:comment>Includes supplementary appendices with experimental configurations, prompts, evaluation protocols, and learned procedure examples</arxiv:comment>
+    <arxiv:primary_category term="cs.AI"/>
+    <author>
+      <name>Praveen Kumar Bodigutla</name>
+    </author>
+    <author>
+      <name>Yizhi Zhang</name>
+    </author>
+    <author>
+      <name>Sai Vivek Kanaparthy</name>
+    </author>
+    <author>
+      <name>Arup De</name>
+    </author>
+  </entry>
+</feed>
