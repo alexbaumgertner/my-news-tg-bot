@@ -1,5 +1,3 @@
-# Copy this file to .github/workflows/ci.yml.
-# The Claude GitHub App cannot write to .github/workflows, so the owner must do it.
 name: CI
 
 on:
