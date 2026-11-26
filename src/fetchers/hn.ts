@@ -47,15 +47,29 @@ export class HnFetcher implements Fetcher {
     const ids = idListSchema.parse(JSON.parse(list.body)).slice(0, limit);
 
     const items: RawItem[] = [];
+    let failures = 0;
+    let lastError: unknown = null;
     let next = 0;
     const worker = async (): Promise<void> => {
       while (next < ids.length) {
         const id = ids[next++]!;
-        const item = await this.fetchStory(`${itemBase}${id}.json`, minScore, since, source);
-        if (item) items.push(item);
+        try {
+          const item = await this.fetchStory(`${itemBase}${id}.json`, minScore, since, source);
+          if (item) items.push(item);
+        } catch (error) {
+          // One bad story must not fail the whole source.
+          failures++;
+          lastError = error;
+        }
       }
     };
     await Promise.all(Array.from({ length: Math.min(concurrency, ids.length) }, worker));
+
+    // If every story request failed, report a failure so the collector does not mark the source healthy.
+    if (ids.length > 0 && failures === ids.length) {
+      const reason = lastError instanceof Error ? lastError.message : String(lastError);
+      throw new Error(`All ${ids.length} Hacker News story requests failed: ${reason}`);
+    }
 
     return { items, notModified: false, etag: null, lastModified: null };
   }
@@ -66,16 +80,11 @@ export class HnFetcher implements Fetcher {
     since: Date | null,
     source: FetchSource,
   ): Promise<RawItem | null> {
-    let story: z.infer<typeof hnItemSchema>;
-    try {
-      const response = await httpGet(url, {}, this.options.http);
-      const parsed = hnItemSchema.safeParse(JSON.parse(response.body));
-      if (!parsed.success) return null;
-      story = parsed.data;
-    } catch {
-      // One bad story must not fail the whole source.
-      return null;
-    }
+    // Throws when the request or the JSON parsing fails. The caller counts these failures.
+    const response = await httpGet(url, {}, this.options.http);
+    const parsed = hnItemSchema.safeParse(JSON.parse(response.body));
+    if (!parsed.success) return null;
+    const story = parsed.data;
     if (story.type !== "story" || story.dead || story.deleted) return null;
     const title = story.title?.trim();
     if (!title) return null;
