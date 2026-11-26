@@ -1,0 +1,158 @@
+import { readFileSync } from "node:fs";
+import { describe, expect, it, vi } from "vitest";
+import {
+  PubmedFetcher,
+  efetchUrl,
+  esearchUrl,
+  parsePubmedXml,
+  studyTypeOf,
+} from "../src/fetchers/pubmed.js";
+import type { FetchSource } from "../src/fetchers/types.js";
+
+const esearchJson = readFileSync("tests/fixtures/pubmed/esearch.json", "utf8");
+const efetchXml = readFileSync("tests/fixtures/pubmed/efetch.xml", "utf8");
+
+const source: FetchSource = {
+  slug: "pubmed-hht",
+  type: "pubmed",
+  url: "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi?db=pubmed&term=hereditary+hemorrhagic+telangiectasia&retmax=20&retmode=json&sort=date",
+  language: "en",
+  etag: null,
+  lastModified: null,
+};
+
+function makeFetcher(bodies: string[], apiKey?: string) {
+  let clock = 1_000;
+  const sleep = vi.fn(async (ms: number) => {
+    clock += ms;
+  });
+  const fetchImpl = vi.fn(async () => new Response(bodies.shift() ?? "", { status: 200 }));
+  const fetcher = new PubmedFetcher({
+    http: {
+      userAgent: "test",
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+      sleep,
+      maxAttempts: 1,
+    },
+    apiKey,
+    now: () => clock,
+  });
+  const urls = () => fetchImpl.mock.calls.map((c) => (c as unknown as [string])[0]);
+  return { fetcher, sleep, urls };
+}
+
+describe("parsePubmedXml", () => {
+  const items = parsePubmedXml(efetchXml, "en");
+
+  it("maps title, abstract, journal, link and publication types", () => {
+    expect(items).toHaveLength(4);
+    const first = items[0]!;
+    expect(first.url).toBe("https://pubmed.ncbi.nlm.nih.gov/43091933/");
+    // Inline <i> tags keep their text and the final dot is removed.
+    expect(first.title).toBe(
+      "Co-Occurrence of an Activating AVPR2 Variant and a Pathogenic ACVRL1 Variant in an Infant",
+    );
+    expect(first.text).toContain("with both AVPR2 and ACVRL1 variants.");
+    expect(first.language).toBe("en");
+    expect(first.metadata).toEqual({
+      pmid: "43091933",
+      journal: "International journal of molecular sciences",
+      publicationTypes: ["Case Reports", "Journal Article"],
+      studyType: "case-report",
+      doi: "10.3390/ijms26000001",
+    });
+    expect(first.publishedAt?.toISOString()).toBe("2026-11-17T00:00:00.000Z");
+  });
+
+  it("decodes XML entities and keeps the labels of a structured abstract", () => {
+    const second = items[1]!;
+    expect(second.metadata?.journal).toBe("Molecular genetics & genomic medicine");
+    expect(second.text).toBe(
+      "BACKGROUND: HHT causes bleeding.\n\nRESULTS: Bevacizumab reduced epistaxis in most patients.",
+    );
+    expect(second.metadata?.studyType).toBe("meta-analysis");
+    // PubDate with year and month only: first day of the month.
+    expect(second.publishedAt?.toISOString()).toBe("2026-12-01T00:00:00.000Z");
+  });
+
+  it("prefers the electronic date and handles a missing abstract and DOI", () => {
+    expect(items[2]!.publishedAt?.toISOString()).toBe("2026-11-09T00:00:00.000Z");
+    expect(items[2]!.metadata?.studyType).toBe("clinical-trial");
+    expect(items[2]!.metadata?.doi).toBeNull();
+    expect(items[3]!.text).toBeNull();
+    expect(items[3]!.publishedAt).toBeNull();
+    expect(items[3]!.metadata?.studyType).toBeNull();
+  });
+
+  it("returns no items for an empty set", () => {
+    expect(parsePubmedXml("<PubmedArticleSet></PubmedArticleSet>", "en")).toEqual([]);
+  });
+});
+
+describe("studyTypeOf", () => {
+  it("picks the strongest evidence first", () => {
+    expect(studyTypeOf(["Review", "Systematic Review", "Meta-Analysis"])).toBe("meta-analysis");
+    expect(studyTypeOf(["Journal Article", "Randomized Controlled Trial"])).toBe(
+      "randomized-controlled-trial",
+    );
+    expect(studyTypeOf(["Review"])).toBe("review");
+    expect(studyTypeOf(["Journal Article"])).toBeNull();
+  });
+});
+
+describe("URL builders", () => {
+  it("adds the API key and the date range", () => {
+    const url = new URL(esearchUrl(source.url, new Date("2026-11-20T10:00:00Z"), "KEY"));
+    expect(url.searchParams.get("term")).toBe("hereditary hemorrhagic telangiectasia");
+    expect(url.searchParams.get("api_key")).toBe("KEY");
+    expect(url.searchParams.get("datetype")).toBe("edat");
+    expect(url.searchParams.get("mindate")).toBe("2026/11/20");
+    expect(url.searchParams.get("maxdate")).toBe("3000");
+  });
+
+  it("sends no API key and no date range when they are not set", () => {
+    const url = new URL(esearchUrl(source.url, null));
+    expect(url.searchParams.has("api_key")).toBe(false);
+    expect(url.searchParams.has("mindate")).toBe(false);
+    expect(new URL(efetchUrl(["1", "2"])).searchParams.get("id")).toBe("1,2");
+  });
+
+  it("rejects a URL that is not esearch", () => {
+    expect(() => esearchUrl("https://example.com/feed", null)).toThrow(/esearch/);
+  });
+});
+
+describe("PubmedFetcher", () => {
+  it("runs esearch, then efetch for the found ids", async () => {
+    const { fetcher, urls } = makeFetcher([esearchJson, efetchXml]);
+    const result = await fetcher.fetch(source, null);
+    expect(result.items).toHaveLength(4);
+    expect(urls()).toHaveLength(2);
+    expect(urls()[0]).toContain("esearch.fcgi");
+    expect(new URL(urls()[1]!).searchParams.get("id")).toBe("43091933,43080066,43074935,43070001");
+  });
+
+  it("skips efetch when the search finds nothing", async () => {
+    const empty = JSON.stringify({ esearchresult: { idlist: [] } });
+    const { fetcher, urls } = makeFetcher([empty]);
+    const result = await fetcher.fetch(source, null);
+    expect(result.items).toEqual([]);
+    expect(urls()).toHaveLength(1);
+  });
+
+  it("limits the rate: 3 requests per second without a key, 10 with a key", async () => {
+    const without = makeFetcher([esearchJson, efetchXml]);
+    await without.fetcher.fetch(source, null);
+    expect(without.sleep).toHaveBeenCalledWith(350);
+
+    const withKey = makeFetcher([esearchJson, efetchXml], "KEY");
+    await withKey.fetcher.fetch(source, null);
+    expect(withKey.sleep).toHaveBeenCalledWith(110);
+    expect(withKey.urls().every((u) => u.includes("api_key=KEY"))).toBe(true);
+  });
+
+  it("fails on an invalid esearch answer", async () => {
+    const { fetcher } = makeFetcher(['{"unexpected":true}']);
+    await expect(fetcher.fetch(source, null)).rejects.toThrow();
+  });
+});
