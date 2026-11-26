@@ -35,4 +35,4 @@ Storage is PostgreSQL with the `pgvector` extension. The schema is in `src/db/sc
 - Run `pnpm db:migrate`. It applies pending migrations, then copies `config/sources.yaml` into `sources` for the owner. Both steps are safe to run again.
 - To change the schema: edit `src/db/schema.ts`, run `pnpm db:generate`, review the new SQL file in `drizzle/` and commit it.
 - Never edit a migration that was already released.
-- Integration test: set `TEST_DATABASE_URL` to a throwaway database and run `pnpm test`. The test drops the `public` schema in that database.
+- Integration test: set `TEST_DATABASE_URL` to a throwaway database and run `pnpm test`. The tests drop the `public` and `drizzle` schemas in that database. Vitest runs test files one at a time (`fileParallelism: false` in `vitest.config.ts`), so the database suites do not interfere. Without `TEST_DATABASE_URL`, these suites are skipped.
