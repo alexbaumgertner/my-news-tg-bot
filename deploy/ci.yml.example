@@ -1,0 +1,22 @@
+# Copy this file to .github/workflows/ci.yml.
+# The Claude GitHub App cannot write to .github/workflows, so the owner must do it.
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint
+      - run: pnpm test
+      - run: pnpm build
