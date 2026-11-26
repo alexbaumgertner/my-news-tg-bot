@@ -12,7 +12,7 @@ Storage is PostgreSQL with the `pgvector` extension. The schema is in `src/db/sc
 
 | Table | Purpose | Key constraints |
 |---|---|---|
-| `sources` | Source registry, copied from `config/sources.yaml`. | unique `(user_id, slug)` |
+| `sources` | Source registry, copied from `config/sources.yaml`. | unique `(user_id, slug)` | Fetch state: `last_fetched_at` (last attempt), `last_success_at`, `last_failure_at`, `last_error`, `consecutive_failures`, `etag`, `last_modified`.
 | `items` | One fetched article. Has an optional `embedding` and a `story_id`. | unique `(user_id, canonical_url)`, unique `(user_id, content_hash)` |
 | `stories` | A group of items about one event. Has an `embedding`. | none |
 | `scores` | LLM score of a story (topics, relevance 0–10, impact, `why_me`, novelty, confidence). | unique `(story_id, prompt_version)` |
@@ -35,4 +35,4 @@ Storage is PostgreSQL with the `pgvector` extension. The schema is in `src/db/sc
 - Run `pnpm db:migrate`. It applies pending migrations, then copies `config/sources.yaml` into `sources` for the owner. Both steps are safe to run again.
 - To change the schema: edit `src/db/schema.ts`, run `pnpm db:generate`, review the new SQL file in `drizzle/` and commit it.
 - Never edit a migration that was already released.
-- Integration test: set `TEST_DATABASE_URL` to a throwaway database and run `pnpm test`. The test drops the `public` schema in that database.
+- Integration test: set `TEST_DATABASE_URL` to a throwaway database and run `pnpm test`. The tests drop the `public` and `drizzle` schemas in that database. Vitest runs test files one at a time (`fileParallelism: false` in `vitest.config.ts`), so the database suites do not interfere. Without `TEST_DATABASE_URL`, these suites are skipped.
