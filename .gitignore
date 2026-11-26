@@ -1,0 +1,10 @@
+node_modules/
+dist/
+coverage/
+.env
+.env.*
+!.env.example
+*.session
+config/profile.yaml
+logs/
+.DS_Store
