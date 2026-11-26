@@ -5,6 +5,8 @@ export interface RawItem {
   text: string | null;
   publishedAt: Date | null;
   language: string;
+  /** Extra source-specific data, for example the Hacker News discussion. */
+  metadata?: Record<string, unknown>;
 }
 
 /** The part of a `sources` row that a fetcher needs. */

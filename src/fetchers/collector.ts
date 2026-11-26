@@ -89,6 +89,7 @@ export async function runCollector(options: CollectorOptions): Promise<SourceRep
               text: item.text,
               contentHash: contentHash(item.title, item.text),
               language: item.language,
+              metadata: item.metadata ?? null,
               publishedAt: item.publishedAt,
               fetchedAt: started,
             })),

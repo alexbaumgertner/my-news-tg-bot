@@ -609,18 +609,18 @@ sources:
   - id: hacker-news-front
     name: "Hacker News front page"
     type: hn
-    url: "https://news.ycombinator.com/rss"
+    url: "https://hacker-news.firebaseio.com/v0/topstories.json"
     language: en
     topics: [ai_dev, web_stack, it_jobs, indie_product]
     trust: 3
     poll_interval: 2h
     active: true
     verified: true
-    notes: "Verified 2026-11-26: 30 items. Apply a score threshold. Alternative: Firebase API https://hacker-news.firebaseio.com/v0/topstories.json (verified, HTTP 200). Score data needs the API or hnrss.org/newest?points=100 (verified, 20 items)."
+    notes: "Official Firebase API (verified 2026-11-26, HTTP 200). The hn fetcher keeps only stories with a score at or above HN_MIN_SCORE. Use beststories.json for the best list."
 
   - id: hn-show
     name: "Hacker News: Show HN (50+ points)"
-    type: hn
+    type: rss
     url: "https://hnrss.org/show?points=50"
     language: en
     topics: [indie_product]
