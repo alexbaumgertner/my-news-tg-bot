@@ -1,0 +1,28 @@
+# systemd unit for the bot process on home-ubuntu.
+# Install: sudo cp deploy/my-news-tg-bot.service /etc/systemd/system/ && sudo systemctl daemon-reload
+# The deploy script enables and restarts the unit after a successful build.
+
+[Unit]
+Description=my-news-tg-bot (personal news digest Telegram bot)
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=newsbot
+Group=newsbot
+WorkingDirectory=/opt/my-news-tg-bot
+EnvironmentFile=/etc/my-news-tg-bot.env
+Environment=NODE_ENV=production
+ExecStart=/usr/bin/node dist/index.js
+Restart=on-failure
+RestartSec=10
+# The host has 8 GB RAM shared with other services. SPEC §9: under ~500 MB.
+MemoryHigh=500M
+MemoryMax=700M
+NoNewPrivileges=true
+ProtectSystem=full
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
