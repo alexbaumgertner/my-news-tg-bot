@@ -2,7 +2,7 @@
 
 A personal Telegram bot that sends me a morning and an evening digest of world news **filtered for my own life and career**. It collects from many sources, has an LLM score each story against my interest profile, and sends only the few items that actually matter to me.
 
-> Status: **Phase 0 (preparation)**. No code yet. Specification: [`docs/SPEC.md`](docs/SPEC.md). Plan: [milestones](https://github.com/alexbaumgertner/my-news-tg-bot/milestones).
+> Status: **Phase 0 (preparation)**. Open questions are resolved (SPEC §11). No code yet. Specification: [`docs/SPEC.md`](docs/SPEC.md). Plan: [milestones](https://github.com/alexbaumgertner/my-news-tg-bot/milestones).
 
 ## Why this exists
 
@@ -39,13 +39,13 @@ Telegram ◄── deliver ◄── compose digest (strong LLM) ◄── rank 
     └── feedback buttons ──► topic / source weights
 ```
 
-1. **Collect** from RSS/Atom feeds, arXiv, PubMed, Hacker News, and later Telegram channels, ClinicalTrials.gov and EU/German government sites.
+1. **Collect** from RSS/Atom feeds (science and tech magazines, lab blogs), arXiv, PubMed, Hacker News and public Telegram channels; later ClinicalTrials.gov and EU/German government sites.
 2. **Normalize** each item: extract the full text, detect the language, canonicalize the URL.
 3. **Dedupe** exactly by URL and hash, and semantically by embeddings. Ten articles about one event become one story.
 4. **Pre-filter** with no LLM: keywords, stop words and embedding similarity to my topics.
-5. **Score** with a fast model (Claude Haiku class). The output is strict JSON: topics, relevance, impact, why-me, confidence, study type.
+5. **Score** with the cheapest model (Claude Haiku class), within a $5/month budget. The output is strict JSON: topics, relevance, impact, why-me, confidence, study type.
 6. **Rank** by relevance × topic weight × source trust × freshness, with at most 3 items per topic.
-7. **Compose** with a strong model (Claude Sonnet class), in Russian, English or mixed.
+7. **Compose** with the same cheap model, in English by default (Russian or mixed on request).
 8. **Deliver** at 07:30 and 20:30 (Europe/Istanbul).
 
 ## Tech stack
@@ -54,7 +54,7 @@ Telegram ◄── deliver ◄── compose digest (strong LLM) ◄── rank 
 |---|---|
 | Runtime | TypeScript, Node.js 22, pnpm |
 | Telegram bot | [grammY](https://grammy.dev/) (long polling) |
-| LLM | Anthropic API: Haiku for scoring, Sonnet for writing |
+| LLM | Anthropic API, cheapest model (Haiku class) for scoring and writing; $5/month budget |
 | Embeddings | Hosted embeddings API, no local models (the server has 8 GB RAM) |
 | Storage | PostgreSQL + pgvector, Drizzle ORM |
 | Scheduling | systemd timers |
@@ -65,8 +65,8 @@ Telegram ◄── deliver ◄── compose digest (strong LLM) ◄── rank 
 | Milestone | Scope |
 |---|---|
 | **Phase 0: Preparation** | Interest profile, verified source list, golden set, server and API accounts, open decisions |
-| **MVP** | RSS, arXiv, PubMed and HN fetchers; the full pipeline; morning and evening digests in `ru`/`en`; 👍/👎 buttons; deployed on home-ubuntu; 14-day trial run |
-| **v1** | Telegram channels, EU and German government sources with translation, ClinicalTrials.gov, `mixed` language mode with vocabulary, `/deep`, `/search`, weekly profile tuning |
+| **MVP** | RSS, arXiv, PubMed, HN and public Telegram channel fetchers; the full pipeline; morning and evening digests in `ru`/`en`; 👍/👎 buttons; deployed on home-ubuntu; 14-day trial run |
+| **v1** | Book-release notices, EU and German government sources with translation, ClinicalTrials.gov, `mixed` language mode with vocabulary, `/deep`, `/search`, weekly profile tuning |
 | **v2** | Urgent pushes, export of vocabulary to Sprachweise/Anki, web archive, weekly long-read, feeds for easy-deep-learning and the HHT research platform |
 
 MVP acceptance criteria are in [`docs/SPEC.md`](docs/SPEC.md#10-milestones-and-acceptance-criteria).
