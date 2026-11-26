@@ -75,20 +75,24 @@ export function normalizeWhitespace(input: string, maxChars: number): string {
   return collapsed.length > maxChars ? collapsed.slice(0, maxChars).trimEnd() : collapsed;
 }
 
-/** Remove tags and collapse white space. Use it for feed text, which often contains HTML. */
+/**
+ * Convert HTML feed text to plain text. Use it for feed text, which often contains HTML.
+ * linkedom decodes all named and numeric entities and drops tags, with or without tags.
+ * Script and style content is removed. Feed excerpts are small, so we parse each one
+ * on its own. The document is not kept after the call.
+ */
 export function cleanText(input: string, maxChars: number): string {
-  const stripped = /<[a-z!/][^>]*>/i.test(input)
-    ? input
-        .replace(/<(script|style)[\s\S]*?<\/\1>/gi, " ")
-        .replace(/<[^>]+>/g, " ")
-        .replace(/&nbsp;/g, " ")
-        .replace(/&amp;/g, "&")
-        .replace(/&lt;/g, "<")
-        .replace(/&gt;/g, ">")
-        .replace(/&quot;/g, '"')
-        .replace(/&#39;/g, "'")
-    : input;
-  return normalizeWhitespace(stripped, maxChars);
+  if (!/[<&]/.test(input)) return normalizeWhitespace(input, maxChars);
+  // Put a space around each tag so that adjacent blocks do not join into one word.
+  const spaced = input.replace(/<\/?[a-z!][^>]*>/gi, " $& ");
+  const { document } = parseHTML(`<!doctype html><html><body>${spaced}</body></html>`);
+  for (const node of Array.from(
+    document.querySelectorAll("script, style") as Iterable<{ remove(): void }>,
+  )) {
+    node.remove();
+  }
+  const text = document.body?.textContent ?? "";
+  return normalizeWhitespace(text, maxChars);
 }
 
 interface Extracted {

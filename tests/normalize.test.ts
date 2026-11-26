@@ -64,6 +64,23 @@ describe("helpers", () => {
     expect(cleanText("a".repeat(50), 10)).toHaveLength(10);
   });
 
+  it("decodes HTML entities in html text without tags", () => {
+    expect(cleanText("Research &amp; development", 100)).toBe("Research & development");
+    expect(cleanText("It&#8217;s here", 100)).toBe("It\u2019s here");
+    expect(cleanText("a &#x2014; b", 100)).toBe("a \u2014 b");
+    expect(cleanText("&copy; 2026", 100)).toBe("\u00A9 2026");
+  });
+
+  it("decodes entities and strips tags in an html item", async () => {
+    const n = new Normalizer({ userAgent, fetchImpl: makeFetch({}) });
+    const body = "<p>Research &amp; development &#8217;</p><p>&copy; 2026</p>".repeat(20);
+    const [item] = await n.normalizeAll([raw({ text: body })]);
+    expect(item!.text).toContain("Research & development \u2019");
+    expect(item!.text).toContain("\u00A9 2026");
+    expect(item!.text).not.toContain("<p>");
+    expect(item!.text).not.toContain("&amp;");
+  });
+
   it("keeps literal markup in the article text", () => {
     const body = `<html><body><article><h1>Dialogs</h1><p>${"Use &lt;dialog&gt; rather than &lt;div&gt; for this component, and avoid inline code. ".repeat(6)}</p><p>Example: &lt;script&gt;alert(1)&lt;/script&gt; is shown as text in this long enough paragraph about web components.</p></article></body></html>`;
     const result = extractMainText(body, "https://example.com/a", 5_000);
