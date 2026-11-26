@@ -180,6 +180,7 @@ export function parsePubmedXml(xml: string, language: string): RawItem[] {
       url: `${PUBMED_ARTICLE_URL}${pmid}/`,
       title,
       text: abstractOf(article),
+      textFormat: "text",
       publishedAt,
       language,
       metadata: {

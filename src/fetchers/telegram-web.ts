@@ -235,6 +235,7 @@ export class TelegramWebFetcher implements Fetcher {
         url: post.externalUrl ?? post.permalink,
         title: makeTitle(post.text) || post.externalUrl || post.permalink,
         text: post.text || null,
+        textFormat: "text",
         publishedAt: post.publishedAt,
         language: source.language,
         metadata: {

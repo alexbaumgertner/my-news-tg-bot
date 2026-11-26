@@ -3,6 +3,11 @@ export interface RawItem {
   url: string;
   title: string;
   text: string | null;
+  /**
+   * Format of `text`. "html" (default): it may contain markup, so the normalizer strips it.
+   * "text": it is plain text already, so the normalizer keeps markup characters.
+   */
+  textFormat?: "html" | "text";
   publishedAt: Date | null;
   language: string;
   /** Extra source-specific data, for example the Hacker News discussion. */

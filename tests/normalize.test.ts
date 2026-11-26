@@ -241,6 +241,30 @@ describe("Normalizer", () => {
     expect(item!.canonicalUrl).toBe("https://example.com/a");
   });
 
+  it("keeps literal markup in plain-text items", async () => {
+    const fetchImpl = makeFetch({});
+    const n = new Normalizer({ userAgent, fetchImpl });
+    const text =
+      "Use <dialog> rather than <div> for this component. ".repeat(15) +
+      "Example: <script>alert(1)</script>";
+    const [item] = await n.normalizeAll([raw({ text, textFormat: "text" })]);
+    expect(item!.text).toContain("Use <dialog> rather than <div>");
+    expect(item!.text).toContain("<script>alert(1)</script>");
+  });
+
+  it("still strips HTML from html items", async () => {
+    const fetchImpl = makeFetch({});
+    const n = new Normalizer({ userAgent, fetchImpl });
+    const body = "<p>Hello <b>world</b> from the feed. </p>".repeat(30) + "<script>x()</script>";
+    const [item] = await n.normalizeAll([raw({ text: body, textFormat: "html" })]);
+    const [implicit] = await n.normalizeAll([raw({ text: body })]);
+    for (const out of [item!, implicit!]) {
+      expect(out.text).toContain("Hello world from the feed.");
+      expect(out.text).not.toContain("<");
+      expect(out.text).not.toContain("x()");
+    }
+  });
+
   it("respects robots.txt and keeps the snippet when the page fails", async () => {
     const fetchImpl = makeFetch({});
     const n = new Normalizer({ userAgent, fetchImpl });

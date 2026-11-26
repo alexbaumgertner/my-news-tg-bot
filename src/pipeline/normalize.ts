@@ -158,7 +158,8 @@ export class Normalizer {
   }
 
   async normalizeOne(item: RawItem): Promise<NormalizedItem> {
-    let text = item.text ? cleanText(item.text, this.maxTextChars) : "";
+    const clean = item.textFormat === "text" ? normalizeWhitespace : cleanText;
+    let text = item.text ? clean(item.text, this.maxTextChars) : "";
     let url = item.url;
     if (text.length < this.snippetMaxChars) {
       const extracted = await this.fetchPage(item.url);
