@@ -33,6 +33,9 @@ The profile lives in `config/profile.yaml`. Each topic has a weight, keywords, s
 | Life and relocation | Medium | Turkey: work and residence permits, taxes, TRY exchange rate (briefly). EU: Blue Card, talent and entrepreneur visas, Germany in particular. Georgia: rules for individual entrepreneurs |
 | Economy | Low | Only what affects income or costs: USD/TRY, tariffs and regulation that hit the IT market |
 | Sport | Low | Training research; major volleyball tournaments (one line) |
+| Popular science and space | Low | Major discoveries in physics, biology, astronomy and space missions; long reads from Quanta, Nature, New Scientist |
+| English learning | Medium | Material from English-learning channels; B2–C1 reading (e.g. The Economist) |
+| Books | Notice only | New releases from book channels and publishers: one-line notice with a link, no summary |
 
 **Hard exclusions:** Russian domestic politics, crime, disasters and conflicts with no direct effect on me, celebrity news, crypto hype, clickbait.
 
@@ -56,7 +59,8 @@ The list below is a starting point. In Phase 0 each entry is checked to see whet
 | Patient and medical organizations | RSS / parsing | Cure HHT, relevant medical associations |
 | EU and governments | RSS / parsing + translation | European Commission (Digital, Research & Innovation, Education), CORDIS, AI Act news; Germany: BMBF, DAAD, Make it in Germany; UNESCO and OECD (education); Turkey: official migration and tax sites |
 | Publishers | RSS / new-release pages | O'Reilly, Manning, Pragmatic Bookshelf, popular-science publishers; new releases on my topics only |
-| Telegram channels (v1) | MTProto, or the public web preview `t.me/s/<channel>` | List provided by me |
+| Telegram channels | Public web preview `t.me/s/<channel>` (decided); no account, so no risk for my personal account. Private channels are out of scope | itsallinenglish, dbibliothek, economistenglish, zakat_podcast |
+| Science and tech magazines | RSS | Nature, Quanta, Scientific American, New Scientist, MIT Technology Review, Ars Technica, WIRED, IEEE Spectrum, The Verge, Space.com, NASA, Universe Today, The Conversation, EdSurge |
 | Aggregators (fallback) | API / RSS | Hacker News (score threshold), Techmeme, Google News RSS for key queries |
 | Russian-language | RSS | Habr (AI and Frontend hubs), N+1; world topics only |
 | German and Turkish | RSS + translation | heise, t3n, Deutschlandfunk (science). Also reading material for German practice |
@@ -117,6 +121,8 @@ Filtered out: 214 items from 38 sources.
 
 Buttons: 👍 · 👎 · More like this · Already knew · More details.
 
+**Books block.** New book releases are not summarized by the LLM. They are listed at the end of the evening digest, one line each (title, author, link), at most 5. This costs almost nothing in tokens.
+
 ## 6. Languages and English practice
 
 The digest also trains my English from B2 toward C1. This is an example of *context-driven learning*: learning built into reading I do anyway.
@@ -159,7 +165,7 @@ The digest also trains my English from B2 toward C1. This is an example of *cont
 | Telegram bot | grammY | Modern, typed, good plugins |
 | Reading Telegram channels (v1) | GramJS (MTProto) or the `t.me/s/` web preview | The Bot API cannot read other channels |
 | Parsing | rss-parser, @mozilla/readability + jsdom, fetch with retries | Light dependencies, no headless browser |
-| LLM | Anthropic API: Haiku for scoring, Sonnet for writing; a provider adapter | Prompt caching for the profile, Batch API for off-peak scoring |
+| LLM | Anthropic API, the cheapest current model (Haiku class) for both scoring and writing; a provider adapter so the model is one config value | Budget is $5/month (decided). Prompt caching for the profile, Batch API for scoring between digests |
 | Embeddings | Hosted API (Voyage or similar) | Local models are too heavy for 8 GB RAM |
 | Database | PostgreSQL + pgvector, Drizzle ORM | One database for rows and vectors |
 | Scheduler | systemd timers | Survives reboots |
@@ -181,11 +187,14 @@ Every table has `user_id`.
 - Risks: home internet and power. These are acceptable for a personal tool.
 - Vercel + Neon can be reconsidered if the bot ever becomes a product.
 
-**Budget.**
+**Budget: $5 per month (decided).**
 
-- Daily and monthly LLM spend limits are set in config; usage is recorded in `llm_usage`.
-- Expected volume: 1–3k items a day. A few hundred reach LLM scoring and 15–20 reach composition.
-- Set the final ceiling after one week of measurements against current Anthropic pricing.
+- Daily (~$0.16) and monthly ($5) LLM spend limits are set in config; usage is recorded in `llm_usage`.
+- Only the cheapest model is used, for scoring and for writing.
+- The pre-filter does most of the work. LLM scoring gets a hard cap of stories per day (start at 100) and only the first ~1,500 characters of each text.
+- Scoring goes through the Batch API between digests; the profile is a cached prompt prefix.
+- Books and the "filtered out" footer use no LLM at all.
+- After one week, compare real spend with the limit and tune the cap.
 
 ## 9. Non-functional requirements
 
@@ -224,7 +233,7 @@ Every table has `user_id`.
 
 **MVP (one sprint, about a week)**
 
-- Sources: RSS/Atom, arXiv, PubMed, Hacker News.
+- Sources: RSS/Atom, arXiv, PubMed, Hacker News, public Telegram channels (`t.me/s/` preview).
 - The full pipeline: dedup, pre-filter, scoring, ranking, composition.
 - Morning and evening digests in `ru` and `en`.
 - 👍/👎 buttons.
@@ -233,7 +242,8 @@ Every table has `user_id`.
 
 **v1 (2–3 weeks)**
 
-- Sources: Telegram channels, EU and German government sites with translation, ClinicalTrials.gov.
+- Sources: EU and German government sites with translation, ClinicalTrials.gov.
+- Books block (new-release notices).
 - `mixed` mode with vocabulary.
 - Commands: `/deep`, `/search`, `/topics`, `/mute`, `/sources`, `/add_source`, `/stats`.
 - Weekly profile tuning.
@@ -256,10 +266,14 @@ Every table has `user_id`.
 
 ## 11. Open questions
 
+All resolved on 2026-11-26.
+
 - [x] Where to run it → home-ubuntu.
-- [ ] Which Telegram channels to read (my list).
-- [ ] How to read channels: personal account (risk of restrictions for automation), a separate account, or the public web preview.
-- [ ] Default language: `ru`, `en` or `mixed` right away.
-- [ ] Exact digest times (now 07:30 and 20:30). Check them against the sleep schedule and the 12:44 daily focus.
-- [ ] HHT news: in the main digest or as a separate feed for the HHT research platform.
-- [ ] Acceptable monthly LLM budget.
+- [x] Default language → `en`.
+- [x] Digest times → 07:30 and 20:30 Europe/Istanbul.
+- [x] HHT news → in the main digest (🧬 Medicine).
+- [x] LLM budget → $5 per month, cheapest models only.
+- [x] Telegram channels → itsallinenglish, dbibliothek, economistenglish, zakat_podcast.
+- [x] How to read channels → public web preview `t.me/s/`, no account.
+- [x] Books → one-line notices of new releases, no summary.
+- [x] Extra sources → science and tech magazines listed in §3, added to `config/sources.yaml` (to be verified in #2).

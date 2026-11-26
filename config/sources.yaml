@@ -1,0 +1,235 @@
+# Source registry. See docs/SPEC.md §3.
+#
+# Fields:
+#   id            unique slug
+#   name          human-readable name
+#   type          rss | arxiv | pubmed | hn | telegram_web (public t.me/s/ preview) | html
+#   url           feed or endpoint URL
+#   language      ISO 639-1 code of the content
+#   topics        topic ids from config/profile.yaml
+#   trust         1–5, how much the source is trusted (primary sources rank higher)
+#   poll_interval how often to poll (e.g. 2h)
+#   active        false = skipped by the collector
+#   verified      true only after a real request returned a valid feed (issue #2)
+#   notes         anything an agent or I should know
+#
+# Every URL below was provided by me but NOT yet verified with a real request.
+# Issue #2 verifies each one, sets `verified: true` or `active: false` with a reason.
+
+sources:
+  # --- Fundamental science and popular science ---
+  - id: nature-news
+    name: Nature
+    type: rss
+    url: https://www.nature.com/nature.rss
+    language: en
+    topics: [science_space, medicine_hht]
+    trust: 5
+    poll_interval: 3h
+    active: true
+    verified: false
+    notes: Whole-journal feed; may mix research papers with News & Comment. Check whether a news-only feed exists.
+
+  - id: quanta
+    name: Quanta Magazine
+    type: rss
+    url: https://www.quantamagazine.org/feed/
+    language: en
+    topics: [science_space, ai_dev]
+    trust: 5
+    poll_interval: 6h
+    active: true
+    verified: false
+
+  - id: scientific-american
+    name: Scientific American
+    type: rss
+    url: http://rss.sciam.com/ScientificAmerican-Global
+    language: en
+    topics: [science_space, medicine_hht]
+    trust: 4
+    poll_interval: 3h
+    active: true
+    verified: false
+    notes: Legacy feed host; may be dead. If so, find the current feed on scientificamerican.com.
+
+  - id: new-scientist
+    name: New Scientist
+    type: rss
+    url: https://www.newscientist.com/feed/home/
+    language: en
+    topics: [science_space, medicine_hht]
+    trust: 4
+    poll_interval: 3h
+    active: true
+    verified: false
+
+  # --- Technology and the IT industry ---
+  - id: mit-tech-review
+    name: MIT Technology Review
+    type: rss
+    url: https://www.technologyreview.com/feed/
+    language: en
+    topics: [ai_dev, it_jobs]
+    trust: 5
+    poll_interval: 3h
+    active: true
+    verified: false
+    notes: Consider the AI topic feed only if the general feed is too noisy.
+
+  - id: ars-technica
+    name: Ars Technica
+    type: rss
+    url: https://feeds.arstechnica.com/arstechnica/index
+    language: en
+    topics: [ai_dev, web_stack, science_space]
+    trust: 4
+    poll_interval: 2h
+    active: true
+    verified: false
+    notes: High volume. Prefer section feeds (AI, science) if the pre-filter lets too much through.
+
+  - id: wired
+    name: WIRED
+    type: rss
+    url: https://www.wired.com/feed/rss
+    language: en
+    topics: [ai_dev, it_jobs]
+    trust: 3
+    poll_interval: 3h
+    active: true
+    verified: false
+    notes: High volume, long reads. Good candidate for the evening long read.
+
+  - id: ieee-spectrum
+    name: IEEE Spectrum
+    type: rss
+    url: https://spectrum.ieee.org/feeds/feed.rss
+    language: en
+    topics: [ai_dev, science_space]
+    trust: 5
+    poll_interval: 6h
+    active: true
+    verified: false
+
+  - id: the-verge
+    name: The Verge
+    type: rss
+    url: https://www.theverge.com/rss/index.xml
+    language: en
+    topics: [ai_dev]
+    trust: 2
+    poll_interval: 2h
+    active: true
+    verified: false
+    notes: Very high volume, consumer-oriented. Low trust; prefer an AI or Science section feed.
+
+  # --- Space and astronomy ---
+  - id: space-com
+    name: Space.com
+    type: rss
+    url: https://www.space.com/feeds/all
+    language: en
+    topics: [science_space]
+    trust: 3
+    poll_interval: 3h
+    active: true
+    verified: false
+    notes: High volume aggregator.
+
+  - id: nasa-breaking
+    name: NASA Breaking News
+    type: rss
+    url: https://www.nasa.gov/rss/dyn/breaking_news.rss
+    language: en
+    topics: [science_space]
+    trust: 5
+    poll_interval: 6h
+    active: true
+    verified: false
+    notes: nasa.gov was redesigned; this legacy path may redirect or be gone. Find the current news feed if so.
+
+  - id: universe-today
+    name: Universe Today
+    type: rss
+    url: https://www.universetoday.com/feed
+    language: en
+    topics: [science_space]
+    trust: 3
+    poll_interval: 6h
+    active: true
+    verified: false
+
+  # --- Education and academia ---
+  - id: the-conversation
+    name: The Conversation (Global)
+    type: rss
+    url: https://theconversation.com/global/articles.atom
+    language: en
+    topics: [learning_science, science_space, medicine_hht]
+    trust: 4
+    poll_interval: 3h
+    active: true
+    verified: false
+    notes: Written by researchers; strong education section.
+
+  - id: edsurge
+    name: EdSurge
+    type: rss
+    url: https://www.edsurge.com/articles_rss
+    language: en
+    topics: [learning_science, it_jobs]
+    trust: 4
+    poll_interval: 6h
+    active: true
+    verified: false
+    notes: Core source for the easy-deep-learning portal (EdTech, AI in education).
+
+  # --- Telegram channels (public web preview, no account needed) ---
+  - id: tg-itsallinenglish
+    name: "Telegram: itsallinenglish"
+    type: telegram_web
+    url: https://t.me/s/itsallinenglish
+    language: en
+    topics: [english_learning]
+    trust: 3
+    poll_interval: 3h
+    active: true
+    verified: false
+    notes: Topics are a guess from the name; confirm after the first fetch.
+
+  - id: tg-dbibliothek
+    name: "Telegram: dbibliothek"
+    type: telegram_web
+    url: https://t.me/s/dbibliothek
+    language: de
+    topics: [books]
+    trust: 3
+    poll_interval: 6h
+    active: true
+    verified: false
+    notes: Book channel. New releases are announced as one-line notices (no summary), see SPEC §5. Language is a guess.
+
+  - id: tg-economistenglish
+    name: "Telegram: economistenglish"
+    type: telegram_web
+    url: https://t.me/s/economistenglish
+    language: en
+    topics: [economy, english_learning]
+    trust: 3
+    poll_interval: 3h
+    active: true
+    verified: false
+    notes: Re-posts of The Economist; good B2–C1 reading material. Topics are a guess.
+
+  - id: tg-zakat-podcast
+    name: "Telegram: zakat_podcast"
+    type: telegram_web
+    url: https://t.me/s/zakat_podcast
+    language: ru
+    topics: []
+    trust: 3
+    poll_interval: 6h
+    active: true
+    verified: false
+    notes: Topics unknown; assign after reading recent posts. Russian-language — world topics only (SPEC §1).
