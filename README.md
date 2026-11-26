@@ -52,7 +52,7 @@ Telegram ◄── deliver ◄── compose digest (strong LLM) ◄── rank 
 
 | Part | Choice |
 |---|---|
-| Runtime | TypeScript, Node.js 22, pnpm |
+| Runtime | TypeScript, Node.js 26 LTS, pnpm |
 | Telegram bot | [grammY](https://grammy.dev/) (long polling) |
 | LLM | Anthropic API, cheapest model (Haiku class) for scoring and writing; $5/month budget |
 | Embeddings | Hosted embeddings API, no local models (the server has 8 GB RAM) |

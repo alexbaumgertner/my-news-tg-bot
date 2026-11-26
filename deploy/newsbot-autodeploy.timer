@@ -1,0 +1,11 @@
+# Check for a new release tag every 2 minutes.
+[Unit]
+Description=Check GitHub for a new my-news-tg-bot release tag
+
+[Timer]
+OnBootSec=1min
+OnUnitActiveSec=2min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

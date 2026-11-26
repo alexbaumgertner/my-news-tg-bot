@@ -163,7 +163,7 @@ The digest also trains my English from B2 toward C1. This is an example of *cont
 
 | Component | Choice | Why |
 |---|---|---|
-| Language | TypeScript, Node.js 22, pnpm | My main stack |
+| Language | TypeScript, Node.js 26 LTS, pnpm | My main stack; 26 is the Active LTS line (end of life April 2029) |
 | Telegram bot | grammY | Modern, typed, good plugins |
 | Reading Telegram channels (v1) | GramJS (MTProto) or the `t.me/s/` web preview | The Bot API cannot read other channels |
 | Parsing | rss-parser, @mozilla/readability + jsdom, fetch with retries | Light dependencies, no headless browser |
@@ -188,6 +188,15 @@ Every table has `user_id`.
 - The bot uses long polling, so no public IP or webhook is needed.
 - Risks: home internet and power. These are acceptable for a personal tool.
 - Vercel + Neon can be reconsidered if the bot ever becomes a product.
+
+**Release and deploy (decided): pull, not push.**
+
+- The owner publishes a release tag `vX.Y.Z` on GitHub.
+- On home-ubuntu, `newsbot-autodeploy.timer` runs every 2 minutes. It reads the newest tag with `git ls-remote` and calls `newsbot-deploy <tag>`.
+- `newsbot-deploy` checks out the tag, installs, builds, migrates and restarts the systemd unit.
+- Why pull: no inbound access to the server, no secrets in GitHub, no Tailscale changes. The cost is a delay of up to 2 minutes.
+- Each tag is tried once. To retry, run `sudo -u newsbot newsbot-deploy <tag>` on the server.
+- Logs: `journalctl -u newsbot-autodeploy -u my-news-tg-bot`.
 
 **Budget: $5 per month (decided).**
 

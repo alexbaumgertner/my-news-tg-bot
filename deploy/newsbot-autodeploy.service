@@ -1,0 +1,13 @@
+# One deploy check. Started by newsbot-autodeploy.timer.
+[Unit]
+Description=Deploy the newest my-news-tg-bot release tag
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=newsbot
+Group=newsbot
+StateDirectory=newsbot
+ExecStart=/usr/local/bin/newsbot-autodeploy
+TimeoutStartSec=15min

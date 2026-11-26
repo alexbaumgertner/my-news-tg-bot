@@ -5,7 +5,7 @@
   "type": "module",
   "description": "Personal Telegram bot that sends a personalized news digest.",
   "engines": {
-    "node": ">=22"
+    "node": ">=26"
   },
   "scripts": {
     "dev": "tsx watch src/index.ts",

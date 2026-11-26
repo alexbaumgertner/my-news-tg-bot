@@ -21,10 +21,11 @@ This is a personal, single-user project: a Telegram bot that sends a personalize
 - To change a pull request, the owner writes a comment that starts with `@claude`.
 - If the issue is not clear, write a question as an issue comment and stop. Do not guess requirements.
 - `home-ubuntu` is the runtime host for the bot only. It is not a development machine.
+- Release: the owner publishes a tag `vX.Y.Z`. `home-ubuntu` deploys it within 2 minutes (see `deploy/` and SPEC §8).
 
 ## Stack and constraints
 
-- TypeScript (strict), Node.js 22, pnpm.
+- TypeScript (strict), Node.js 26 (Active LTS until October 2027, end of life April 2029), pnpm.
 - grammY for the bot, Drizzle ORM, PostgreSQL + pgvector, vitest for tests, pino for logs, zod for config and LLM output validation.
 - The runtime host is `home-ubuntu`: Ubuntu Server on a 2013 MacBook Air with 8 GB RAM, shared with other services.
   - Keep the process under ~500 MB of RSS.
