@@ -215,6 +215,36 @@ describe("RobotsCache", () => {
     expect(await cache.isAllowed("https://example.com/y")).toBe(true);
     expect(fetchImpl).toHaveBeenCalledTimes(2);
   });
+
+  it("re-fetches a successful robots.txt after the cache TTL", async () => {
+    let body = "User-agent: *\nAllow: /\n";
+    const fetchImpl = vi.fn(async () => new Response(body)) as unknown as typeof fetch;
+    let time = 0;
+    const cache = new RobotsCache({ userAgent, fetchImpl, cacheTtlMs: 10_000, now: () => time });
+    expect(await cache.isAllowed("https://example.com/private")).toBe(true);
+    body = "User-agent: *\nDisallow: /private\n";
+    time = 9_000;
+    expect(await cache.isAllowed("https://example.com/private")).toBe(true);
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    time = 10_001;
+    expect(await cache.isAllowed("https://example.com/private")).toBe(false);
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+  });
+
+  it("uses a 24 hour cache TTL by default", async () => {
+    const fetchImpl = vi.fn(
+      async () => new Response("User-agent: *\nAllow: /\n"),
+    ) as unknown as typeof fetch;
+    let time = 0;
+    const cache = new RobotsCache({ userAgent, fetchImpl, now: () => time });
+    await cache.isAllowed("https://example.com/x");
+    time = 23 * 3_600_000;
+    await cache.isAllowed("https://example.com/x");
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    time = 25 * 3_600_000;
+    await cache.isAllowed("https://example.com/x");
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+  });
 });
 
 describe("Normalizer", () => {

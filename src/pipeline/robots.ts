@@ -4,6 +4,8 @@ export interface RobotsOptions {
   timeoutMs?: number;
   /** How long (ms) a transient failure stays cached. Default: 5 minutes. */
   failureTtlMs?: number;
+  /** How long (ms) a successful result stays cached. Default: 24 hours. */
+  cacheTtlMs?: number;
   /** Clock in ms. Inject it in tests. */
   now?: () => number;
 }
@@ -125,15 +127,17 @@ interface Loaded {
 
 interface Entry {
   pending: Promise<Loaded>;
-  /** Time (ms) when the entry expires. Null means it never expires. */
+  /** Time (ms) when the entry expires. Null while the lookup is pending. */
   expiresAt: number | null;
 }
 
 const DEFAULT_FAILURE_TTL_MS = 5 * 60_000;
+const DEFAULT_CACHE_TTL_MS = 24 * 60 * 60_000;
 
 /**
  * Fetch and cache robots.txt once per origin. A missing file allows all.
- * A transient failure is cached for a short time only. Then the next check retries.
+ * A successful result is cached for 24 hours (RFC 9309). A transient failure is cached
+ * for a short time only. Then the next check retries.
  */
 export class RobotsCache {
   private readonly cache = new Map<string, Entry>();
@@ -149,9 +153,11 @@ export class RobotsCache {
       entry = { pending, expiresAt: null };
       this.cache.set(parsed.origin, entry);
       const created = entry;
-      const ttl = this.options.failureTtlMs ?? DEFAULT_FAILURE_TTL_MS;
+      const failureTtl = this.options.failureTtlMs ?? DEFAULT_FAILURE_TTL_MS;
+      const cacheTtl = this.options.cacheTtlMs ?? DEFAULT_CACHE_TTL_MS;
       void pending.then((loaded) => {
-        if (loaded.transient) created.expiresAt = (this.options.now ?? Date.now)() + ttl;
+        const ttl = loaded.transient ? failureTtl : cacheTtl;
+        created.expiresAt = (this.options.now ?? Date.now)() + ttl;
       });
     }
     const { rules } = await entry.pending;
