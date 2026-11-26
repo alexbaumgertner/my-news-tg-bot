@@ -3,7 +3,7 @@
 # Fields:
 #   id            unique slug
 #   name          human-readable name
-#   type          rss | arxiv | pubmed | hn | telegram_web (public t.me/s/ preview) | html
+#   type          rss | arxiv | pubmed | clinicaltrials | hn | telegram_web (public t.me/s/ preview) | html
 #   url           feed or endpoint URL
 #   language      ISO 639-1 code of the content
 #   topics        topic ids from config/profile.yaml
@@ -15,7 +15,9 @@
 #
 # These 18 sources were provided by me and checked on 2026-11-26 in a browser.
 # 16 work; 2 Telegram channels have the web preview disabled (active: false).
-# Issue #2 adds the remaining sources from SPEC §3.
+# Issue #2 added the remaining sources from SPEC §3 (section "Added in issue #2").
+# All of them were fetched once on 2026-11-26 with curl. `verified: true` means HTTP 200 and a valid feed or JSON.
+# Topic ids not yet defined in config/profile.yaml (issue #1): life_relocation, indie_product, sport. Align them with the profile.
 
 sources:
   # --- Fundamental science and popular science ---
@@ -236,3 +238,601 @@ sources:
     active: true
     verified: true
     notes: "Verified 2026-11-26: web preview works. \"Zakat Imperii\" (Andrei Aksyonov): history of the Russian Empire, podcast and posts (~31K subscribers). Not current news. Add a low-weight `history` topic to the profile (#1)."
+
+  # ===== Added in issue #2 =====
+
+  # --- AI lab and agent tooling blogs ---
+  - id: anthropic-news
+    name: "Anthropic News"
+    type: html
+    url: "https://www.anthropic.com/news"
+    language: en
+    topics: [ai_dev]
+    trust: 5
+    poll_interval: 3h
+    active: false
+    verified: false
+    notes: "Checked 2026-11-26: no official RSS (/news/rss.xml and /rss.xml return 404). robots.txt allows crawling. Needs HTML parsing (v1). A third-party scraped feed exists (github.com/Olshansk/rss-feeds, feed_anthropic_news.xml, HTTP 200); owner must decide if an unofficial mirror is acceptable."
+
+  - id: openai-news
+    name: "OpenAI News"
+    type: rss
+    url: "https://openai.com/news/rss.xml"
+    language: en
+    topics: [ai_dev]
+    trust: 5
+    poll_interval: 3h
+    active: true
+    verified: true
+    notes: "Verified 2026-11-26: HTTP 200, latest item 2026-11-24. Large archive; collector must ignore old items."
+
+  - id: deepmind-blog
+    name: "Google DeepMind Blog"
+    type: rss
+    url: "https://deepmind.google/blog/rss.xml"
+    language: en
+    topics: [ai_dev, science_space]
+    trust: 5
+    poll_interval: 6h
+    active: true
+    verified: true
+    notes: "Verified 2026-11-26: HTTP 200, 100 items. The response is gzip-compressed even without Accept-Encoding; the HTTP client must decode it."
+
+  - id: google-ai-blog
+    name: "Google AI Blog"
+    type: rss
+    url: "https://blog.google/innovation-and-ai/technology/ai/rss/"
+    language: en
+    topics: [ai_dev]
+    trust: 4
+    poll_interval: 6h
+    active: true
+    verified: true
+    notes: "Verified 2026-11-26: 20 items. Old URL /technology/ai/rss/ redirects here."
+
+  - id: huggingface-blog
+    name: "Hugging Face Blog"
+    type: rss
+    url: "https://huggingface.co/blog/feed.xml"
+    language: en
+    topics: [ai_dev]
+    trust: 4
+    poll_interval: 6h
+    active: true
+    verified: true
+    notes: "Verified 2026-11-26: HTTP 200, latest item 2026-11-26. Includes community posts; pre-filter must handle volume."
+
+  - id: simon-willison
+    name: "Simon Willison's Weblog"
+    type: rss
+    url: "https://simonwillison.net/atom/everything/"
+    language: en
+    topics: [ai_dev, web_stack]
+    trust: 4
+    poll_interval: 3h
+    active: true
+    verified: true
+    notes: "Verified 2026-11-26: Atom, 30 items. Personal blog with a very good signal on LLM tooling."
+
+  - id: github-changelog
+    name: "GitHub Changelog"
+    type: rss
+    url: "https://github.blog/changelog/feed/"
+    language: en
+    topics: [ai_dev, web_stack]
+    trust: 5
+    poll_interval: 6h
+    active: true
+    verified: true
+    notes: "Verified 2026-11-26: 10 items."
+
+  - id: claude-code-releases
+    name: "Claude Code releases"
+    type: rss
+    url: "https://github.com/anthropics/claude-code/releases.atom"
+    language: en
+    topics: [ai_dev]
+    trust: 5
+    poll_interval: 6h
+    active: true
+    verified: true
+    notes: "Verified 2026-11-26: Atom, 10 items, latest 2026-11-25. Primary source for Claude Code changes."
+
+  - id: mcp-spec-releases
+    name: "Model Context Protocol releases"
+    type: rss
+    url: "https://github.com/modelcontextprotocol/modelcontextprotocol/releases.atom"
+    language: en
+    topics: [ai_dev]
+    trust: 5
+    poll_interval: 12h
+    active: true
+    verified: true
+    notes: "Verified 2026-11-26: Atom, 9 items. Primary source for MCP spec changes."
+
+  # --- Web stack releases ---
+  - id: nextjs-blog
+    name: "Next.js Blog"
+    type: rss
+    url: "https://nextjs.org/feed.xml"
+    language: en
+    topics: [web_stack]
+    trust: 5
+    poll_interval: 12h
+    active: true
+    verified: true
+    notes: "Verified 2026-11-26: HTTP 200, latest item 2026-11-17."
+
+  - id: nextjs-releases
+    name: "Next.js releases"
+    type: rss
+    url: "https://github.com/vercel/next.js/releases.atom"
+    language: en
+    topics: [web_stack]
+    trust: 5
+    poll_interval: 6h
+    active: true
+    verified: true
+    notes: "Verified 2026-11-26: Atom, 10 items. Includes canary releases; the pre-filter should skip canary tags."
+
+  - id: nodejs-blog
+    name: "Node.js Blog"
+    type: rss
+    url: "https://nodejs.org/en/feed/blog.xml"
+    language: en
+    topics: [web_stack]
+    trust: 5
+    poll_interval: 6h
+    active: true
+    verified: true
+    notes: "Verified 2026-11-26: HTTP 200. Security releases are announced here. Large archive; ignore old items."
+
+  - id: nodejs-releases
+    name: "Node.js releases"
+    type: rss
+    url: "https://github.com/nodejs/node/releases.atom"
+    language: en
+    topics: [web_stack]
+    trust: 5
+    poll_interval: 6h
+    active: true
+    verified: true
+    notes: "Verified 2026-11-26: Atom, 10 items."
+
+  - id: react-releases
+    name: "React releases"
+    type: rss
+    url: "https://github.com/facebook/react/releases.atom"
+    language: en
+    topics: [web_stack]
+    trust: 5
+    poll_interval: 12h
+    active: true
+    verified: true
+    notes: "Verified 2026-11-26: Atom, 10 items. The URL redirects to github.com/react/react. Latest release 2026-10-14."
+
+  - id: typescript-releases
+    name: "TypeScript releases"
+    type: rss
+    url: "https://github.com/microsoft/TypeScript/releases.atom"
+    language: en
+    topics: [web_stack]
+    trust: 5
+    poll_interval: 12h
+    active: true
+    verified: true
+    notes: "Verified 2026-11-26: Atom, 10 items."
+
+  - id: vercel-news
+    name: "Vercel News"
+    type: rss
+    url: "https://vercel.com/atom"
+    language: en
+    topics: [web_stack]
+    trust: 4
+    poll_interval: 6h
+    active: true
+    verified: true
+    notes: "Verified 2026-11-26: Atom, 100 items, latest 2026-11-25."
+
+  - id: payload-releases
+    name: "Payload CMS releases"
+    type: rss
+    url: "https://github.com/payloadcms/payload/releases.atom"
+    language: en
+    topics: [web_stack]
+    trust: 5
+    poll_interval: 12h
+    active: true
+    verified: true
+    notes: "Verified 2026-11-26: Atom, 10 items. The blog feed payloadcms.com/blog/rss.xml returns 404."
+
+  - id: neon-blog
+    name: "Neon Blog"
+    type: rss
+    url: "https://neon.com/blog/rss.xml"
+    language: en
+    topics: [web_stack]
+    trust: 4
+    poll_interval: 12h
+    active: true
+    verified: true
+    notes: "Verified 2026-11-26: HTTP 200, latest item 2026-11-25. Large archive; ignore old items."
+
+  - id: chrome-developers-blog
+    name: "Chrome for Developers Blog"
+    type: rss
+    url: "https://developer.chrome.com/static/blog/feed.xml"
+    language: en
+    topics: [web_stack]
+    trust: 5
+    poll_interval: 12h
+    active: true
+    verified: true
+    notes: "Verified 2026-11-26: 10 items. Covers Manifest V3 and Chrome Web Store policy; latest item 2026-10-07."
+
+  # --- Science: papers and trials ---
+  - id: arxiv-cs-ai
+    name: "arXiv cs.AI"
+    type: arxiv
+    url: "https://rss.arxiv.org/rss/cs.AI"
+    language: en
+    topics: [ai_dev]
+    trust: 4
+    poll_interval: 12h
+    active: true
+    verified: true
+    notes: "Verified 2026-11-26: RSS with about 400 items per day. The pre-filter must reduce volume by keywords before any LLM call."
+
+  - id: arxiv-cs-cl
+    name: "arXiv cs.CL"
+    type: arxiv
+    url: "https://rss.arxiv.org/rss/cs.CL"
+    language: en
+    topics: [ai_dev, learning_science]
+    trust: 4
+    poll_interval: 12h
+    active: true
+    verified: true
+    notes: "Verified 2026-11-26: RSS with about 180 items per day."
+
+  - id: arxiv-cs-hc
+    name: "arXiv cs.HC"
+    type: arxiv
+    url: "https://rss.arxiv.org/rss/cs.HC"
+    language: en
+    topics: [learning_science, ai_dev]
+    trust: 4
+    poll_interval: 12h
+    active: true
+    verified: true
+    notes: "Verified 2026-11-26: RSS with about 30 items per day."
+
+  - id: pubmed-hht
+    name: "PubMed: HHT"
+    type: pubmed
+    url: "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi?db=pubmed&term=hereditary+hemorrhagic+telangiectasia&retmax=20&retmode=json&sort=date"
+    language: en
+    topics: [medicine_hht]
+    trust: 5
+    poll_interval: 12h
+    active: true
+    verified: true
+    notes: "Verified 2026-11-26: E-utilities esearch returned JSON, count 4997. Fetch details with efetch or esummary by id."
+
+  - id: pubmed-learning-memory
+    name: "PubMed: learning and memory"
+    type: pubmed
+    url: "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi?db=pubmed&term=(learning%5BTitle%5D+AND+memory%5BTitle%5D)&retmax=20&retmode=json&sort=date"
+    language: en
+    topics: [learning_science]
+    trust: 4
+    poll_interval: 24h
+    active: true
+    verified: true
+    notes: "Verified 2026-11-26: esearch returned JSON, count 8607. Query is broad; refine it after the first golden-set run."
+
+  - id: clinicaltrials-hht
+    name: "ClinicalTrials.gov: HHT"
+    type: clinicaltrials
+    url: "https://clinicaltrials.gov/api/v2/studies?query.cond=hereditary+hemorrhagic+telangiectasia&pageSize=20&format=json&sort=LastUpdatePostDate:desc"
+    language: en
+    topics: [medicine_hht]
+    trust: 5
+    poll_interval: 24h
+    active: false
+    verified: true
+    notes: "Verified 2026-11-26: API v2 returned JSON (HTTP 200) for this exact URL, including the sort parameter. Disabled until a clinicaltrials fetcher exists."
+
+  - id: science-news
+    name: "Science News (AAAS)"
+    type: rss
+    url: "https://www.science.org/rss/news_current.xml"
+    language: en
+    topics: [science_space, medicine_hht]
+    trust: 5
+    poll_interval: 6h
+    active: true
+    verified: true
+    notes: "Verified 2026-11-26: RDF feed, 10 items."
+
+  - id: nature-neuroscience
+    name: "Nature: Neuroscience subject"
+    type: rss
+    url: "https://www.nature.com/subjects/neuroscience.rss"
+    language: en
+    topics: [learning_science]
+    trust: 5
+    poll_interval: 12h
+    active: true
+    verified: true
+    notes: "Verified 2026-11-26: 30 items. Covers memory and learning research."
+
+  - id: stat-news
+    name: "STAT News"
+    type: rss
+    url: "https://www.statnews.com/feed/"
+    language: en
+    topics: [medicine_hht]
+    trust: 4
+    poll_interval: 6h
+    active: true
+    verified: true
+    notes: "Verified 2026-11-26: 20 items. Medicine and biotech news."
+
+  - id: mit-news-ai
+    name: "MIT News: Artificial Intelligence"
+    type: rss
+    url: "https://news.mit.edu/rss/topic/artificial-intelligence2"
+    language: en
+    topics: [ai_dev, learning_science]
+    trust: 4
+    poll_interval: 12h
+    active: true
+    verified: true
+    notes: "Verified 2026-11-26: 50 items."
+
+  # --- Patient organizations ---
+  - id: cure-hht
+    name: "Cure HHT"
+    type: rss
+    url: "https://curehht.org/feed/"
+    language: en
+    topics: [medicine_hht]
+    trust: 4
+    poll_interval: 24h
+    active: true
+    verified: true
+    notes: "Verified 2026-11-26: 10 items, latest 2026-11-10. Low frequency."
+
+  # --- Aggregators and section feeds ---
+  - id: hacker-news-front
+    name: "Hacker News front page"
+    type: hn
+    url: "https://news.ycombinator.com/rss"
+    language: en
+    topics: [ai_dev, web_stack, it_jobs, indie_product]
+    trust: 3
+    poll_interval: 2h
+    active: true
+    verified: true
+    notes: "Verified 2026-11-26: 30 items. Apply a score threshold. Alternative: Firebase API https://hacker-news.firebaseio.com/v0/topstories.json (verified, HTTP 200). Score data needs the API or hnrss.org/newest?points=100 (verified, 20 items)."
+
+  - id: hn-show
+    name: "Hacker News: Show HN (50+ points)"
+    type: hn
+    url: "https://hnrss.org/show?points=50"
+    language: en
+    topics: [indie_product]
+    trust: 3
+    poll_interval: 6h
+    active: true
+    verified: true
+    notes: "Verified 2026-11-26: 20 items. Covers solo-founder launches. Third-party service hnrss.org."
+
+  - id: techmeme
+    name: "Techmeme"
+    type: rss
+    url: "https://www.techmeme.com/feed.xml"
+    language: en
+    topics: [ai_dev, it_jobs]
+    trust: 3
+    poll_interval: 3h
+    active: true
+    verified: true
+    notes: "Verified 2026-11-26: 15 items. Headlines only."
+
+  - id: oreilly-radar
+    name: "O'Reilly Radar"
+    type: rss
+    url: "https://www.oreilly.com/radar/feed/"
+    language: en
+    topics: [ai_dev, web_stack, books]
+    trust: 4
+    poll_interval: 12h
+    active: true
+    verified: true
+    notes: "Verified 2026-11-26: 15 items."
+
+  - id: the-verge-ai
+    name: "The Verge: AI"
+    type: rss
+    url: "https://www.theverge.com/rss/ai-artificial-intelligence/index.xml"
+    language: en
+    topics: [ai_dev]
+    trust: 2
+    poll_interval: 3h
+    active: true
+    verified: true
+    notes: "Verified 2026-11-26: Atom, 10 items. Section feed. Replace the whole-site feed the-verge with this one after the golden-set run."
+
+  - id: ars-technica-tech-lab
+    name: "Ars Technica: Technology Lab"
+    type: rss
+    url: "https://feeds.arstechnica.com/arstechnica/technology-lab"
+    language: en
+    topics: [ai_dev, web_stack, it_jobs]
+    trust: 4
+    poll_interval: 3h
+    active: true
+    verified: true
+    notes: "Verified 2026-11-26: 20 items. Section feed. Candidate to replace the whole-site ars-technica feed."
+
+  - id: google-news-turkey-permits
+    name: "Google News: Turkey residence and work permits"
+    type: rss
+    url: "https://news.google.com/rss/search?q=Turkey+residence+permit+work+permit&hl=en&gl=US&ceid=US:en"
+    language: en
+    topics: [life_relocation]
+    trust: 2
+    poll_interval: 12h
+    active: true
+    verified: true
+    notes: "Verified 2026-11-26: 75 items, latest 2026-11-19. Aggregated media, not primary. Replace it with official migration and tax sites in v1."
+
+  - id: google-news-eu-blue-card
+    name: "Google News: EU Blue Card and Germany visas"
+    type: rss
+    url: "https://news.google.com/rss/search?q=EU+Blue+Card+Germany+visa&hl=en&gl=US&ceid=US:en"
+    language: en
+    topics: [life_relocation]
+    trust: 2
+    poll_interval: 24h
+    active: true
+    verified: true
+    notes: "Verified 2026-11-26: 30 items, latest 2026-08-12. Low frequency."
+
+  - id: google-news-try-usd
+    name: "Google News: Turkish lira and dollar"
+    type: rss
+    url: "https://news.google.com/rss/search?q=Turkish+lira+dollar&hl=en&gl=US&ceid=US:en"
+    language: en
+    topics: [economy, life_relocation]
+    trust: 2
+    poll_interval: 12h
+    active: true
+    verified: true
+    notes: "Verified 2026-11-26: 100 items, latest 2026-11-25. Use for the USD/TRY line only."
+
+  - id: google-news-volleyball
+    name: "Google News: volleyball world championship"
+    type: rss
+    url: "https://news.google.com/rss/search?q=volleyball+world+championship&hl=en&gl=US&ceid=US:en"
+    language: en
+    topics: [sport]
+    trust: 2
+    poll_interval: 24h
+    active: true
+    verified: true
+    notes: "Verified 2026-11-26: 59 items, latest 2026-11-25. One line per major tournament."
+
+  # --- Russian-language world-topic feeds ---
+  - id: habr-ai
+    name: "Habr: Artificial Intelligence hub"
+    type: rss
+    url: "https://habr.com/ru/rss/hubs/artificial_intelligence/articles/"
+    language: ru
+    topics: [ai_dev]
+    trust: 3
+    poll_interval: 3h
+    active: true
+    verified: true
+    notes: "Verified 2026-11-26: 40 items. Community articles; quality varies."
+
+  - id: habr-webdev
+    name: "Habr: Web Development hub"
+    type: rss
+    url: "https://habr.com/ru/rss/hubs/webdev/articles/"
+    language: ru
+    topics: [web_stack]
+    trust: 3
+    poll_interval: 6h
+    active: true
+    verified: true
+    notes: "Verified 2026-11-26: 40 items. SPEC asks for a Frontend hub; this is the closest hub verified. Check hub slug `frontend` later."
+
+  - id: nplus1
+    name: "N+1"
+    type: rss
+    url: "https://nplus1.ru/rss"
+    language: ru
+    topics: [science_space, medicine_hht, learning_science]
+    trust: 4
+    poll_interval: 3h
+    active: true
+    verified: true
+    notes: "Verified 2026-11-26: 10 items. Russian popular science. Exclude domestic politics."
+
+  # --- German-language feeds ---
+  - id: heise
+    name: "heise online"
+    type: rss
+    url: "https://www.heise.de/rss/heise-atom.xml"
+    language: de
+    topics: [ai_dev, web_stack, it_jobs]
+    trust: 4
+    poll_interval: 3h
+    active: true
+    verified: true
+    notes: "Verified 2026-11-26: Atom, 158 items. High volume. Also reading practice for German."
+
+  - id: t3n
+    name: "t3n"
+    type: rss
+    url: "https://t3n.de/rss.xml"
+    language: de
+    topics: [it_jobs, indie_product, ai_dev]
+    trust: 3
+    poll_interval: 3h
+    active: true
+    verified: true
+    notes: "Verified 2026-11-26: 20 items."
+
+  - id: deutschlandfunk-forschung
+    name: "Deutschlandfunk: Forschung aktuell"
+    type: rss
+    url: "https://www.deutschlandfunk.de/forschung-aktuell-102.xml"
+    language: de
+    topics: [science_space, learning_science]
+    trust: 4
+    poll_interval: 12h
+    active: true
+    verified: true
+    notes: "Verified 2026-11-26: podcast feed with episode descriptions."
+
+  # --- Not usable yet ---
+  - id: indiehackers
+    name: "Indie Hackers"
+    type: rss
+    url: "https://www.indiehackers.com/feed"
+    language: en
+    topics: [indie_product]
+    trust: 3
+    poll_interval: 12h
+    active: false
+    verified: false
+    notes: "Checked 2026-11-26: HTTP 403 for /feed and 404 for /feed.xml. No public feed. Hacker News Show HN covers indie_product for now."
+
+  - id: make-it-in-germany
+    name: "Make it in Germany"
+    type: html
+    url: "https://www.make-it-in-germany.com/en/"
+    language: en
+    topics: [life_relocation]
+    trust: 5
+    poll_interval: 24h
+    active: false
+    verified: false
+    notes: "Checked 2026-11-26: /en/rss returns an HTML page, not a feed. Needs HTML parsing (v1)."
+
+  - id: ec-digital-newsroom
+    name: "European Commission: Digital newsroom"
+    type: html
+    url: "https://ec.europa.eu/newsroom/dae/"
+    language: en
+    topics: [ai_dev, life_relocation]
+    trust: 5
+    poll_interval: 24h
+    active: false
+    verified: false
+    notes: "Checked 2026-11-26: the feed endpoint needs a numeric item_type parameter (HTTP 400). Find the correct value in v1. Do not guess."

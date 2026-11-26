@@ -31,7 +31,7 @@ export type Env = z.infer<typeof envSchema>;
 export const sourceSchema = z.object({
   id: z.string().min(1),
   name: z.string().min(1),
-  type: z.enum(["rss", "arxiv", "pubmed", "hn", "telegram_web", "html"]),
+  type: z.enum(["rss", "arxiv", "pubmed", "clinicaltrials", "hn", "telegram_web", "html"]),
   url: z.string().url(),
   language: z.string().length(2),
   topics: z.array(z.string()).default([]),
