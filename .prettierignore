@@ -6,3 +6,4 @@ config/sources.yaml
 docs/
 README.md
 CLAUDE.md
+tests/fixtures/telegram/
