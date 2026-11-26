@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:content="http://purl.org/rss/1.0/modules/content/">
+  <channel>
+    <title>Example</title>
+    <link>https://example.com/</link>
+    <description>Fixture</description>
+    <item>
+      <title>New story</title>
+      <link>https://example.com/new?utm_source=rss</link>
+      <pubDate>Wed, 25 Nov 2026 10:00:00 GMT</pubDate>
+      <description>Short summary.</description>
+    </item>
+    <item>
+      <title>Old story</title>
+      <link>https://example.com/old</link>
+      <pubDate>Mon, 01 Jan 2024 10:00:00 GMT</pubDate>
+      <content:encoded><![CDATA[<p>Full body.</p>]]></content:encoded>
+    </item>
+    <item>
+      <title>No link</title>
+    </item>
+  </channel>
+</rss>
