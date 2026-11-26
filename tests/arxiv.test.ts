@@ -86,4 +86,38 @@ describe("ArxivFetcher", () => {
     await fetcher.fetch(source, new Date("2020-01-01T00:00:00Z"));
     expect(sleep).toHaveBeenCalledWith(3000);
   });
+
+  it("keeps the 3 second gap between HTTP retries and later pages", async () => {
+    // Virtual clock: sleep moves time forward. No real waiting, no network.
+    let clock = 10_000;
+    const sleep = vi.fn(async (ms: number) => {
+      clock += ms;
+    });
+    const attemptTimes: number[] = [];
+    const full = Array.from({ length: 100 }, () => xml.match(/<entry>[\s\S]*?<\/entry>/)![0]);
+    const page = xml.replace(/<entry>[\s\S]*<\/entry>/, full.join("\n"));
+    const responses = [503, 503, page, xml];
+    const fetchImpl = vi.fn(async () => {
+      attemptTimes.push(clock);
+      const body = responses.shift()!;
+      return typeof body === "number"
+        ? new Response("", { status: body })
+        : new Response(body, { status: 200 });
+    });
+    const fetcher = new ArxivFetcher({
+      http: {
+        userAgent: "test",
+        fetchImpl: fetchImpl as unknown as typeof fetch,
+        sleep,
+        maxAttempts: 3,
+        baseDelayMs: 500,
+      },
+      now: () => clock,
+    });
+    await fetcher.fetch(source, new Date("2020-01-01T00:00:00Z"));
+    expect(attemptTimes).toHaveLength(4);
+    for (let i = 1; i < attemptTimes.length; i++) {
+      expect(attemptTimes[i]! - attemptTimes[i - 1]!).toBeGreaterThanOrEqual(3000);
+    }
+  });
 });

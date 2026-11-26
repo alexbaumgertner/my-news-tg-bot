@@ -108,12 +108,15 @@ export class ArxivFetcher implements Fetcher {
     // Without `since` (first run) we read one page only. That avoids a large first load.
     const maxPages = since ? MAX_PAGES : 1;
     for (let page = 0; page < maxPages; page++) {
-      await this.throttle();
       // The API has no useful validators, so we send none.
+      // The throttle runs before every HTTP attempt, so retries keep the gap too.
       const response = await httpGet(
         arxivApiUrl(category, page * PAGE_SIZE),
         {},
-        this.options.http,
+        {
+          ...this.options.http,
+          beforeAttempt: () => this.throttle(),
+        },
       );
       const feed = await this.parser.parseString(response.body);
       const entries = feed.items as ArxivEntry[];

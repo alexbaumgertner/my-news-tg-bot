@@ -6,6 +6,8 @@ export interface HttpOptions {
   baseDelayMs?: number;
   fetchImpl?: typeof fetch;
   sleep?: (ms: number) => Promise<void>;
+  /** Called before every attempt, including retries. Use it for rate limits. */
+  beforeAttempt?: () => Promise<void>;
 }
 
 export interface HttpResult {
@@ -57,6 +59,7 @@ export async function httpGet(
   let lastError: HttpError = new HttpError("No attempt made", null);
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
+      await options.beforeAttempt?.();
       const response = await doFetch(url, {
         headers,
         signal: AbortSignal.timeout(timeoutMs),
