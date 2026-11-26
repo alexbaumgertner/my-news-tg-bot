@@ -110,6 +110,31 @@ describe("robots", () => {
     expect(isPathAllowed(encodedRule, "/a%2fb")).toBe(false);
     expect(isPathAllowed(encodedRule, "/a/b")).toBe(true);
   });
+
+  it("compares rule specificity by normalized length", () => {
+    const rules = parseRobots(
+      "User-agent: *\nDisallow: /private/x\nAllow: /%70rivate\n",
+      userAgent,
+    );
+    expect(isPathAllowed(rules, "/private/x")).toBe(false);
+    expect(isPathAllowed(rules, "/private/y")).toBe(true);
+  });
+
+  it("lets Allow win a tie of normalized lengths", () => {
+    const rules = parseRobots("User-agent: *\nDisallow: /private\nAllow: /%70rivate\n", userAgent);
+    expect(isPathAllowed(rules, "/private/x")).toBe(true);
+  });
+
+  it("uses the UTF-8 length of non-ASCII rules", () => {
+    const rules = parseRobots("User-agent: *\nDisallow: /caf%C3%A9/x\nAllow: /café\n", userAgent);
+    expect(isPathAllowed(rules, "/caf%C3%A9/x")).toBe(false);
+    expect(isPathAllowed(rules, "/café/x")).toBe(false);
+  });
+
+  it("normalizes a raw non-ASCII path", () => {
+    const rules = parseRobots("User-agent: *\nDisallow: /caf%C3%A9\n", userAgent);
+    expect(isPathAllowed(rules, "/café/news")).toBe(false);
+  });
 });
 
 describe("RobotsCache", () => {

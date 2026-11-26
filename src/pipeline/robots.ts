@@ -88,9 +88,8 @@ export function normalizeEncoding(input: string): string {
   });
 }
 
-function matches(rawPattern: string, rawPath: string): boolean {
-  const pattern = normalizeEncoding(rawPattern);
-  const path = normalizeEncoding(rawPath);
+/** Match a normalized pattern against a normalized path. */
+function matches(pattern: string, path: string): boolean {
   const anchored = pattern.endsWith("$");
   const body = anchored ? pattern.slice(0, -1) : pattern;
   const source = body
@@ -100,13 +99,19 @@ function matches(rawPattern: string, rawPath: string): boolean {
   return new RegExp(`^${source}${anchored ? "$" : ""}`).test(path);
 }
 
-/** Check a path against rules. The longest matching rule wins. Allow wins a tie. */
-export function isPathAllowed(rules: Rules, path: string): boolean {
+/**
+ * Check a path against rules. The longest matching rule wins. Allow wins a tie.
+ * Both the rules and the path are normalized first. Rule length is the normalized length.
+ */
+export function isPathAllowed(rules: Rules, rawPath: string): boolean {
+  const path = normalizeEncoding(rawPath);
   let best = { length: -1, allowed: true };
-  for (const p of rules.disallow) {
+  for (const raw of rules.disallow) {
+    const p = normalizeEncoding(raw);
     if (matches(p, path) && p.length > best.length) best = { length: p.length, allowed: false };
   }
-  for (const p of rules.allow) {
+  for (const raw of rules.allow) {
+    const p = normalizeEncoding(raw);
     if (matches(p, path) && p.length >= best.length) best = { length: p.length, allowed: true };
   }
   return best.allowed;
