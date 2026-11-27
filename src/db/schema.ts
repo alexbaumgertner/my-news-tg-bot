@@ -88,6 +88,8 @@ export const stories = pgTable(
     /** Cosine similarity to the best topic. Null when the similarity was not computed. */
     prefilterSimilarity: real("prefilter_similarity"),
     prefilterAt: timestamp("prefilter_at", { withTimezone: true }),
+    /** Representative item whose LLM output was invalid. Scoring skips it until the representative changes. */
+    scoreFailedItemId: bigint("score_failed_item_id", { mode: "number" }),
     createdAt: createdAt(),
   },
   (t) => [
@@ -153,6 +155,11 @@ export const scores = pgTable(
     isRussiaDomestic: boolean("is_russia_domestic").notNull().default(false),
     studyType: text("study_type"),
     rankScore: real("rank_score"),
+    /** The representative item that was scored. A new representative means a new score. */
+    representativeItemId: bigint("representative_item_id", { mode: "number" }).references(
+      () => items.id,
+      { onDelete: "set null" },
+    ),
     model: text("model").notNull(),
     promptVersion: text("prompt_version").notNull(),
     createdAt: createdAt(),
@@ -242,9 +249,14 @@ export const llmUsage = pgTable(
     cacheReadTokens: integer("cache_read_tokens").notNull().default(0),
     cacheWriteTokens: integer("cache_write_tokens").notNull().default(0),
     costUsd: numeric("cost_usd", { precision: 12, scale: 6 }).notNull().default("0"),
+    /** Set for a batch answer: "<provider batch id>:<custom id>". It makes a replay safe. */
+    batchEntryKey: text("batch_entry_key"),
     createdAt: createdAt(),
   },
-  (t) => [index("llm_usage_user_created_idx").on(t.userId, t.createdAt)],
+  (t) => [
+    index("llm_usage_user_created_idx").on(t.userId, t.createdAt),
+    unique("llm_usage_user_batch_entry_uq").on(t.userId, t.batchEntryKey),
+  ],
 );
 
 /** Stub for v1: words shown in the English block. */
@@ -272,3 +284,28 @@ export const userSettings = pgTable("user_settings", {
   chatId: bigint("chat_id", { mode: "number" }),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
+
+/** Batch API jobs for scoring. A later run collects the results of a pending batch. */
+export const llmBatches = pgTable(
+  "llm_batches",
+  {
+    id: id(),
+    userId: userId(),
+    providerBatchId: text("provider_batch_id").notNull(),
+    /** "pending" until the results are stored, then "ended". */
+    status: text("status").notNull().default("pending"),
+    model: text("model").notNull(),
+    promptVersion: text("prompt_version").notNull(),
+    /** One entry per request: the custom id and the story and item that it scores. */
+    entries: jsonb("entries")
+      .$type<{ customId: string; storyId: number; itemId: number }[]>()
+      .notNull(),
+    createdAt: createdAt(),
+    endedAt: timestamp("ended_at", { withTimezone: true }),
+  },
+  (t) => [
+    unique("llm_batches_user_provider_uq").on(t.userId, t.providerBatchId),
+    index("llm_batches_user_status_idx").on(t.userId, t.status),
+    check("llm_batches_status_ck", sql`${t.status} in ('pending', 'ended')`),
+  ],
+);
