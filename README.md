@@ -86,6 +86,34 @@ docs/        SPEC.md, DB.md (schema) and decisions
 
 Copy `config/profile.example.yaml` to `config/profile.yaml` and edit it. The bot reads the profile from `CONFIG_DIR` (default `./config`). The real file is in `.gitignore` and is not committed. `loadProfile` in `src/profile.ts` validates the file and rejects unknown fields.
 
+## Run collection by hand
+
+Collection fetches every due source and stores new items. It seeds `sources` from `config/sources.yaml` when the table is empty. `deploy/deploy.sh` already runs the seed after each migration (`pnpm db:migrate`).
+
+On a development machine with a database:
+
+```bash
+pnpm collect
+```
+
+On `home-ubuntu`, after a deploy (the file `/etc/my-news-tg-bot.env` is owned by `root:newsbot`, mode 640):
+
+```bash
+sudo -u newsbot bash -c 'set -a; . /etc/my-news-tg-bot.env; set +a; cd /opt/my-news-tg-bot && node dist/collect.js'
+```
+
+The command prints one summary line: sources ok, not modified and failed, items fetched and items inserted. Exit code 0: at least one source succeeded, or nothing was due. Exit code 1: every due source failed, or the database is not reachable. A second run right after the first one does not duplicate items.
+
+Count items per source:
+
+```sql
+SELECT s.slug, count(i.id) AS items, max(i.fetched_at) AS last_fetched
+FROM sources s
+LEFT JOIN items i ON i.source_id = s.id
+GROUP BY s.slug
+ORDER BY items DESC;
+```
+
 ## Working on this repo
 
 Development runs on GitHub. Each task is an issue. To give an issue to the agent, add the label **`claude`**. Claude Code then runs in GitHub Actions, implements the issue and opens a pull request. To ask for changes on a pull request, write a comment that starts with `@claude`. Details: [`docs/SPEC.md` §11](docs/SPEC.md#11-development-workflow).
