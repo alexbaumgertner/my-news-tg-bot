@@ -40,6 +40,7 @@ safety_exception:
 topics:
   - id: agentic_ai
     title: Agentic AI development
+    emoji: "🤖"
     weight: 1.0
     mode: digest
     description: >-
@@ -65,6 +66,7 @@ topics:
 
   - id: learning_science
     title: Learning science and education
+    emoji: "🎓"
     weight: 1.0
     mode: digest
     description: >-
@@ -90,6 +92,7 @@ topics:
 
   - id: medicine_biology
     title: Medicine and biology
+    emoji: "🧬"
     weight: 1.0
     mode: digest
     description: >-
@@ -115,6 +118,7 @@ topics:
 
   - id: web_stack
     title: Web stack
+    emoji: "🌐"
     weight: 0.6
     mode: digest
     description: >-
@@ -141,6 +145,7 @@ topics:
 
   - id: indie_product
     title: Indie hacking and product
+    emoji: "🚀"
     weight: 0.6
     mode: digest
     description: >-
@@ -166,6 +171,7 @@ topics:
 
   - id: it_job_market
     title: IT job market
+    emoji: "💼"
     weight: 0.6
     mode: digest
     description: >-
@@ -189,6 +195,7 @@ topics:
 
   - id: life_relocation
     title: Life and relocation
+    emoji: "🏠"
     weight: 0.6
     mode: digest
     description: >-
@@ -215,6 +222,7 @@ topics:
 
   - id: english_learning
     title: English learning
+    emoji: "🇬🇧"
     weight: 0.6
     mode: digest
     description: >-
@@ -238,6 +246,7 @@ topics:
 
   - id: economy
     title: Economy
+    emoji: "💶"
     weight: 0.3
     mode: digest
     description: >-
@@ -261,6 +270,7 @@ topics:
 
   - id: sport
     title: Sport
+    emoji: "⚽"
     weight: 0.3
     mode: digest
     description: >-
@@ -283,6 +293,7 @@ topics:
 
   - id: popular_science
     title: Popular science and space
+    emoji: "🔭"
     weight: 0.3
     mode: digest
     description: >-
@@ -307,6 +318,7 @@ topics:
 
   - id: history
     title: History
+    emoji: "🏛️"
     weight: 0.3
     mode: digest
     description: >-
@@ -328,6 +340,7 @@ topics:
 
   - id: books
     title: Books
+    emoji: "📚"
     weight: 0.3
     mode: notice
     description: >-
