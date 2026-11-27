@@ -8,7 +8,8 @@ import {
   renderComposeStory,
   type ComposeStory,
 } from "../src/llm/compose-schema.js";
-import { FakeProvider } from "../src/llm/provider.js";
+import { FakeProvider, type LlmUsage } from "../src/llm/provider.js";
+import type { UsageStore } from "../src/llm/score-store.js";
 import { profileSchema } from "../src/profile.js";
 
 const topic = (id: string, title: string, emoji?: string) => ({
@@ -239,6 +240,21 @@ describe("renderComposeStory", () => {
   });
 });
 
+const NOW = new Date("2026-06-10T12:00:00Z");
+
+/** In-memory usage rows, as in the scoring tests. */
+class MemoryUsage implements UsageStore {
+  rows: { cost: number; at: Date; key?: string; purpose?: string }[] = [];
+  async spentSince(since: Date) {
+    return this.rows.filter((r) => r.at >= since).reduce((sum, r) => sum + r.cost, 0);
+  }
+  async recordUsage(_m: string, _u: LlmUsage, cost: number, key?: string, purpose?: string) {
+    if (key && this.rows.some((r) => r.key === key)) return false;
+    this.rows.push({ cost, at: NOW, key, purpose });
+    return true;
+  }
+}
+
 describe("composeItems", () => {
   const stories: ComposeStory[] = [1, 2, 3].map((n) => ({
     storyId: n,
@@ -258,7 +274,12 @@ describe("composeItems", () => {
     cacheWritePerMTok: 1.25,
     batchFactor: 0.5,
   };
-  const options = (provider: FakeProvider) => ({
+  const options = (provider: FakeProvider | null, store: UsageStore = new MemoryUsage()) => ({
+    store,
+    runKey: "run1",
+    dailyLimitUsd: 10,
+    monthlyLimitUsd: 100,
+    now: () => NOW,
     provider,
     logger: pino({ level: "silent" }),
     profile,
@@ -286,6 +307,53 @@ describe("composeItems", () => {
     expect(report.usage.inputTokens).toBe(2000);
     expect(report.costUsd).toBeGreaterThan(0);
     expect(provider.requests[0]!.system).toContain("# Reader profile");
+  });
+
+  const good = JSON.stringify({ headline: "H", summary: "S.", why_me: "W." });
+
+  it("persists the usage of valid and invalid answers once", async () => {
+    const store = new MemoryUsage();
+    const provider = new FakeProvider((r) => (r.user.includes("Title 2") ? "not json" : good));
+    const report = await composeItems(stories, options(provider, store));
+    expect(report.items).toHaveLength(2);
+    expect(store.rows).toHaveLength(3);
+    expect(store.rows.every((r) => r.purpose === "compose" && r.cost > 0)).toBe(true);
+    // A replay with the same run key adds no row and no cost.
+    const again = await composeItems(stories, options(provider, store));
+    expect(store.rows).toHaveLength(3);
+    expect(again.costUsd).toBe(0);
+  });
+
+  it("refuses to compose when scoring used the budget", async () => {
+    const store = new MemoryUsage();
+    await store.recordUsage("m", {} as LlmUsage, 10, "b:1", "score");
+    const provider = new FakeProvider(() => good);
+    const report = await composeItems(stories, options(provider, store));
+    expect(provider.requests).toHaveLength(0);
+    expect(report.items).toEqual([]);
+    expect(report.uncomposed.map((s) => s.storyId)).toEqual([1, 2, 3]);
+    expect(report.stopReason).toBe("daily_budget");
+  });
+
+  it("stops in the middle of a run when the monthly budget runs out", async () => {
+    const store = new MemoryUsage();
+    const provider = new FakeProvider(() => good);
+    const first = await composeItems(stories.slice(0, 1), options(provider, store));
+    const spent = first.costUsd;
+    const report = await composeItems(stories, {
+      ...options(provider, store),
+      runKey: "run2",
+      monthlyLimitUsd: spent * 2 + 0.0001,
+    });
+    expect(report.stopReason).toBe("monthly_budget");
+    expect(report.items.length + report.uncomposed.length).toBe(3);
+    expect(report.uncomposed.length).toBeGreaterThan(0);
+  });
+
+  it("does not crash without an API key", async () => {
+    const report = await composeItems(stories, options(null));
+    expect(report.stopReason).toBe("no_api_key");
+    expect(report.uncomposed).toHaveLength(3);
   });
 
   it("labels the prompt with a version from the file", () => {
