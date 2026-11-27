@@ -129,8 +129,9 @@ export async function loadSentStoryIds(db: Db, userId: number): Promise<Set<numb
 }
 
 /**
- * Scored stories whose newest item is not older than `since`. A story with several scores
- * (prompt versions) uses the newest one.
+ * Scored stories whose newest item is not older than `since`. A story is a candidate only if
+ * it passed the pre-filter and the score belongs to its current representative item. A story
+ * with several such scores (prompt versions) uses the newest one.
  */
 export async function loadRankCandidates(
   db: Db,
@@ -153,7 +154,16 @@ export async function loadRankCandidates(
     .innerJoin(stories, eq(stories.id, scores.storyId))
     .innerJoin(items, eq(items.id, stories.representativeItemId))
     .innerJoin(sources, eq(sources.id, items.sourceId))
-    .where(and(eq(scores.userId, userId), gte(stories.lastItemAt, since)))
+    .where(
+      and(
+        eq(scores.userId, userId),
+        gte(stories.lastItemAt, since),
+        // The story must have passed the pre-filter for its current representative.
+        eq(stories.prefilterStatus, "passed"),
+        // The score must belong to the current representative. Else it is stale.
+        eq(scores.representativeItemId, stories.representativeItemId),
+      ),
+    )
     .orderBy(desc(scores.createdAt), desc(scores.id));
 
   const byStory = new Map<number, RankCandidate>();
