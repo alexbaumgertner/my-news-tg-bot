@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { config as loadDotenv } from "dotenv";
 import { parse as parseYaml } from "yaml";
 import { z } from "zod";
+import type { FeedbackConfig } from "./feedback/rules.js";
 
 export class ConfigError extends Error {
   constructor(message: string) {
@@ -41,6 +42,12 @@ const envSchema = z.object({
   DEDUP_WINDOW_HOURS: z.coerce.number().positive().max(720).default(48),
   PREFILTER_MIN_SIMILARITY: z.coerce.number().min(-1).max(1).default(0.4),
   PREFILTER_WEIGHT_DISCOUNT: z.coerce.number().min(0).max(1).default(0.05),
+  // Feedback: each vote moves a multiplier by this fraction. The multipliers stay in the bounds.
+  FEEDBACK_STEP: z.coerce.number().gt(0).max(0.25).default(0.05),
+  FEEDBACK_TOPIC_MIN: z.coerce.number().gt(0).max(1).default(0.5),
+  FEEDBACK_TOPIC_MAX: z.coerce.number().min(1).max(5).default(1.5),
+  FEEDBACK_SOURCE_MIN: z.coerce.number().gt(0).max(1).default(0.5),
+  FEEDBACK_SOURCE_MAX: z.coerce.number().min(1).max(5).default(1.5),
   HTTP_USER_AGENT: z.string().min(1).default("my-news-tg-bot/0.1"),
   NCBI_API_KEY: z.string().optional(),
   HN_MIN_SCORE: z.coerce.number().int().min(0).default(100),
@@ -48,6 +55,17 @@ const envSchema = z.object({
 });
 
 export type Env = z.infer<typeof envSchema>;
+
+/** The feedback step and bounds from the environment. */
+export function feedbackConfig(env: Env): FeedbackConfig {
+  return {
+    step: env.FEEDBACK_STEP,
+    topicMin: env.FEEDBACK_TOPIC_MIN,
+    topicMax: env.FEEDBACK_TOPIC_MAX,
+    sourceMin: env.FEEDBACK_SOURCE_MIN,
+    sourceMax: env.FEEDBACK_SOURCE_MAX,
+  };
+}
 
 export const sourceSchema = z.object({
   id: z.string().min(1),

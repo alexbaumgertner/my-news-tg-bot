@@ -1,6 +1,9 @@
 import { Bot } from "grammy";
 import type { BotCommand } from "grammy/types";
 import type { Db } from "../db/client.js";
+import { parseFeedback } from "../feedback/callback.js";
+import { createDbFeedbackStore, type FeedbackStore } from "../feedback/store.js";
+import { DEFAULT_FEEDBACK_CONFIG, type FeedbackConfig } from "../feedback/rules.js";
 import { parseLanguage, parseSchedule } from "./parse.js";
 import { getSettings, updateSettings } from "./settings.js";
 
@@ -16,6 +19,10 @@ export interface BotDeps {
   ownerId: number;
   db: Db;
   /** Build and send a digest now. Not available until the digest task is done. */
+  /** Bounds of the feedback multipliers. Default: the defaults of `FEEDBACK_*`. */
+  feedback?: FeedbackConfig;
+  /** Stores votes. Default: on `db`. Tests may pass a fake. */
+  feedbackStore?: FeedbackStore;
   buildDigest?: (userId: number, chatId: number) => Promise<void>;
 }
 
@@ -84,6 +91,32 @@ export function createBot(deps: BotDeps): Bot {
     await ctx.reply(
       `Morning: ${s.morningTime}\nEvening: ${s.eveningTime}\nTime zone: ${s.timezone}`,
     );
+  });
+
+  const feedbackStore =
+    deps.feedbackStore ?? createDbFeedbackStore(db, deps.feedback ?? DEFAULT_FEEDBACK_CONFIG);
+
+  // Feedback buttons. The whitelist above already drops a press from anyone but the owner.
+  bot.on("callback_query:data", async (ctx) => {
+    const action = parseFeedback(ctx.callbackQuery.data);
+    if (!action) {
+      // Not a feedback button. Answer so that the client stops the spinner.
+      await ctx.answerCallbackQuery();
+      return;
+    }
+    let text: string;
+    try {
+      const outcome = await feedbackStore.press(ownerId, action);
+      if (outcome.status === "not_found")
+        text = "This digest was replaced. Use the buttons of the newest one.";
+      else if (outcome.vote === "up") text = "👍 Noted";
+      else if (outcome.vote === "down") text = "👎 Noted";
+      else text = "Vote removed";
+    } catch (error) {
+      console.error("feedback failed", error);
+      text = "Could not save the vote. Try again.";
+    }
+    await ctx.answerCallbackQuery({ text });
   });
 
   return bot;

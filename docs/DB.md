@@ -19,7 +19,8 @@ Storage is PostgreSQL with the `pgvector` extension. The schema is in `src/db/sc
 | `scores` | LLM score of a story (topics, relevance 0–10, impact, `why_me`, novelty, confidence). | unique `(story_id, prompt_version)` |
 | `digests` | One digest that the bot sent (kind, language, times). | none |
 | `digest_items` | A story inside a digest, with the text that was sent. | unique `(digest_id, story_id)` |
-| `feedback` | A reaction to a digest item. | none |
+| `feedback` | A 👍 or 👎 on a digest item (`kind` is `up` or `down`), with the story, topics and source at vote time. | unique `(user_id, digest_item_id)` |
+| `weight_adjustments` | Multiplier of a topic weight or a source trust, derived from `feedback` and rewritten after each vote. Applied in the ranking. | unique `(user_id, dimension, key)` |
 | `profile_versions` | Every version of the interest profile (JSON). | unique `(user_id, version)` |
 | `llm_usage` | Tokens and cost of each LLM call, for the budget limits. | none |
 | `vocab_seen` | Stub for v1: words shown in the English block. | unique `(user_id, language, word)` |

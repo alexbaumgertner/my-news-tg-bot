@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
+import { NO_ADJUSTMENTS, type Adjustments } from "../src/feedback/rules.js";
 import {
+  DEFAULT_RANK_OPTIONS,
   type RankCandidate,
   freshness,
   selectForDigest,
@@ -55,6 +57,85 @@ describe("storyScore", () => {
   it("halves freshness per half-life and treats a future date as new", () => {
     expect(freshness(hoursAgo(48), now, 24)).toBeCloseTo(0.25);
     expect(freshness(new Date(now.getTime() + 3_600_000), now, 24)).toBe(1);
+  });
+});
+
+describe("ranking with feedback adjustments", () => {
+  const withAdjustments = (adjustments: Adjustments) => ({
+    ...DEFAULT_RANK_OPTIONS,
+    adjustments,
+  });
+
+  it("scales the score by the trust multiplier", () => {
+    const c = story({ relevance: 10, sourceTrust: 4 });
+    expect(storyScore(c, 1, now, DEFAULT_RANK_OPTIONS, 1.5)).toBeCloseTo(1.2);
+  });
+
+  it("gives the same result without adjustments and with an empty set", () => {
+    const list = [story({ relevance: 9 }), story({ topics: ["med"] }), story({ relevance: 6 })];
+    const plain = selectForDigest(list, profile, "morning", now, new Set());
+    const empty = selectForDigest(
+      list,
+      profile,
+      "morning",
+      now,
+      new Set(),
+      withAdjustments(NO_ADJUSTMENTS),
+    );
+    expect(empty).toEqual(plain);
+  });
+
+  it("moves a story down when its topic is disliked and up when it is liked", () => {
+    const ai = story({ topics: ["ai"], relevance: 7 });
+    const med = story({ topics: ["med"], relevance: 7 });
+    const run = (adjustments: Adjustments) =>
+      selectForDigest([ai, med], profile, "morning", now, new Set(), withAdjustments(adjustments));
+    // Med has weight 0.5, so ai leads without votes.
+    expect(run(NO_ADJUSTMENTS).map((s) => s.storyId)).toEqual([ai.storyId, med.storyId]);
+    const disliked = run({ topics: new Map([["ai", 0.4]]), sources: new Map() });
+    expect(disliked.map((s) => s.storyId)).toEqual([med.storyId, ai.storyId]);
+    const liked = run({ topics: new Map([["med", 1.5]]), sources: new Map() });
+    const scoreOf = (list: typeof liked, id: number) => list.find((s) => s.storyId === id)!.score;
+    expect(scoreOf(liked, med.storyId)).toBeCloseTo(
+      scoreOf(run(NO_ADJUSTMENTS), med.storyId) * 1.5,
+    );
+  });
+
+  it("moves a story by the trust of its source", () => {
+    const a = story({ sourceId: 1, relevance: 7 });
+    const b = story({ sourceId: 2, relevance: 7 });
+    const out = selectForDigest(
+      [a, b],
+      profile,
+      "morning",
+      now,
+      new Set(),
+      withAdjustments({ topics: new Map(), sources: new Map([[2, 1.2]]) }),
+    );
+    expect(out.map((s) => s.storyId)).toEqual([b.storyId, a.storyId]);
+  });
+
+  it("keeps the per-topic limit and the per-digest limit", () => {
+    const ai = Array.from({ length: 5 }, () => story({ relevance: 10, sourceId: 1 }));
+    const out = selectForDigest(
+      ai,
+      profile,
+      "morning",
+      now,
+      new Set(),
+      withAdjustments({ topics: new Map([["ai", 1.5]]), sources: new Map([[1, 1.5]]) }),
+    );
+    expect(out).toHaveLength(3);
+  });
+
+  it("is deterministic for the same adjustments", () => {
+    const list = Array.from({ length: 6 }, (_, i) =>
+      story({ sourceId: i % 2, relevance: 6 + (i % 3) }),
+    );
+    const adj = withAdjustments({ topics: new Map([["ai", 0.8]]), sources: new Map([[1, 1.1]]) });
+    const first = selectForDigest(list, profile, "morning", now, new Set(), adj);
+    const second = selectForDigest([...list].reverse(), profile, "morning", now, new Set(), adj);
+    expect(second).toEqual(first);
   });
 });
 

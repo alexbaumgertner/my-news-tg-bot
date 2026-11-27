@@ -16,7 +16,14 @@ import { randomUUID } from "node:crypto";
 import type { Db } from "../db/client.js";
 import { digestItems, digests, items, llmUsage, scores, sources, stories } from "../db/schema.js";
 import type { ComposeStory } from "../llm/compose-schema.js";
-import { rankDegradedDigest, rankDigest, type RankOptions } from "../pipeline/rank.js";
+import { loadAdjustments, recomputeAdjustments } from "../feedback/store.js";
+import { DEFAULT_FEEDBACK_CONFIG, type FeedbackConfig } from "../feedback/rules.js";
+import {
+  DEFAULT_RANK_OPTIONS,
+  rankDegradedDigest,
+  rankDigest,
+  type RankOptions,
+} from "../pipeline/rank.js";
 import type { Profile } from "../profile.js";
 import type { DigestClaim, DigestStore } from "./run.js";
 
@@ -26,6 +33,8 @@ export interface DbDigestStoreOptions {
   profile: Profile;
   windowHours: number;
   rankOptions?: RankOptions;
+  /** Bounds of the feedback multipliers. Default: the defaults of `FEEDBACK_*`. */
+  feedback?: FeedbackConfig;
   /** How long a claim blocks other runs of the slot. Default: 10 minutes. */
   leaseMs?: number;
 }
@@ -44,6 +53,11 @@ export function createDbDigestStore(options: DbDigestStoreOptions): DigestStore 
       eq(digests.status, "claimed"),
       eq(digests.claimToken, claim.token),
     );
+  /** The rank options with the multipliers of the votes. Read at each rank, so a vote counts at once. */
+  const rankOptionsWithVotes = async (): Promise<RankOptions> => ({
+    ...(options.rankOptions ?? DEFAULT_RANK_OPTIONS),
+    adjustments: await loadAdjustments(db, userId, options.feedback ?? DEFAULT_FEEDBACK_CONFIG),
+  });
   return {
     async findDigest(kind, date) {
       const [row] = await db
@@ -55,7 +69,7 @@ export function createDbDigestStore(options: DbDigestStoreOptions): DigestStore 
       return row ?? null;
     },
 
-    rank(kind, now) {
+    async rank(kind, now) {
       return rankDigest({
         db,
         userId,
@@ -63,11 +77,11 @@ export function createDbDigestStore(options: DbDigestStoreOptions): DigestStore 
         kind,
         now,
         windowHours: options.windowHours,
-        options: options.rankOptions,
+        options: await rankOptionsWithVotes(),
       });
     },
 
-    rankDegraded(kind, now) {
+    async rankDegraded(kind, now) {
       return rankDegradedDigest({
         db,
         userId,
@@ -75,7 +89,7 @@ export function createDbDigestStore(options: DbDigestStoreOptions): DigestStore 
         kind,
         now,
         windowHours: options.windowHours,
-        options: options.rankOptions,
+        options: await rankOptionsWithVotes(),
       });
     },
 
@@ -222,23 +236,37 @@ export function createDbDigestStore(options: DbDigestStoreOptions): DigestStore 
           })
           .returning({ id: digests.id });
         if (!row) return null;
-        // Items of an earlier attempt belong to a row that this claim took over.
-        await tx.delete(digestItems).where(eq(digestItems.digestId, row.id));
-        if (digest.items.length > 0) {
-          await tx.insert(digestItems).values(
-            digest.items.map((item, index) => ({
-              userId,
-              digestId: row.id,
-              storyId: item.storyId,
-              position: index + 1,
-              headline: item.headline,
-              summary: item.summary,
-              whyMe: item.whyMe,
-              url: item.url,
-            })),
-          );
+        // Items of an earlier attempt belong to a row that this claim took over. Delete them.
+        // New rows get new ids (identity column), so a button of the earlier attempt matches
+        // nothing. Votes on the deleted items go with them, so recompute the adjustments.
+        const deleted = await tx
+          .delete(digestItems)
+          .where(eq(digestItems.digestId, row.id))
+          .returning({ id: digestItems.id });
+        if (deleted.length > 0) {
+          await tx.execute(sql`select pg_advisory_xact_lock(${userId})`);
+          await recomputeAdjustments(tx, userId, options.feedback ?? DEFAULT_FEEDBACK_CONFIG);
         }
-        return { digestId: row.id, token };
+        let itemIds: number[] = [];
+        if (digest.items.length > 0) {
+          const inserted = await tx
+            .insert(digestItems)
+            .values(
+              digest.items.map((item, index) => ({
+                userId,
+                digestId: row.id,
+                storyId: item.storyId,
+                position: index + 1,
+                headline: item.headline,
+                summary: item.summary,
+                whyMe: item.whyMe,
+                url: item.url,
+              })),
+            )
+            .returning({ id: digestItems.id, position: digestItems.position });
+          itemIds = inserted.sort((a, b) => a.position - b.position).map((r) => r.id);
+        }
+        return { digestId: row.id, token, itemIds };
       });
     },
 

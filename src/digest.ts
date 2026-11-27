@@ -1,5 +1,5 @@
 import { parseArgs } from "node:util";
-import { ConfigError, loadConfig } from "./config.js";
+import { ConfigError, feedbackConfig, loadConfig } from "./config.js";
 import { createDb } from "./db/client.js";
 import { getSettings } from "./bot/settings.js";
 import { withRetry } from "./digest/retry.js";
@@ -49,6 +49,7 @@ async function main(): Promise<number> {
         userId: env.TELEGRAM_OWNER_ID,
         profile,
         windowHours: WINDOW_HOURS,
+        feedback: feedbackConfig(env),
       }),
       sender: withRetry(createGrammySender(env.TELEGRAM_BOT_TOKEN), logger),
       usageStore: createDbScoringStore(db, env.TELEGRAM_OWNER_ID),

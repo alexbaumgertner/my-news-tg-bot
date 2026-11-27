@@ -5,10 +5,11 @@ import type { MessageSender } from "./run.js";
 export function createGrammySender(token: string): MessageSender {
   const api = new Api(token);
   return {
-    async send(chatId, html) {
+    async send(chatId, html, replyMarkup) {
       const message = await api.sendMessage(chatId, html, {
         parse_mode: "HTML",
         link_preview_options: { is_disabled: true },
+        ...(replyMarkup ? { reply_markup: replyMarkup } : {}),
       });
       return message.message_id;
     },

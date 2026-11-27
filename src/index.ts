@@ -1,6 +1,7 @@
 import { createBot, startBot } from "./bot/bot.js";
 import { ConfigError, loadConfig } from "./config.js";
 import { createDb } from "./db/client.js";
+import { feedbackConfig } from "./config.js";
 import { createLogger } from "./logger.js";
 
 async function main(): Promise<void> {
@@ -13,6 +14,7 @@ async function main(): Promise<void> {
     token: config.env.TELEGRAM_BOT_TOKEN,
     ownerId: config.env.TELEGRAM_OWNER_ID,
     db,
+    feedback: feedbackConfig(config.env),
   });
   bot.catch((err) => logger.error({ err: err.error }, "Bot error"));
 
