@@ -64,6 +64,13 @@
       "when": 1795814877415,
       "tag": "0008_llm_usage_batch_entry_key",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1795818939111,
+      "tag": "0009_digest_slot_date",
+      "breakpoints": true
     }
   ]
 }
