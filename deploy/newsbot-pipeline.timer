@@ -1,0 +1,15 @@
+# Collect and process every 2 hours, at even hours Europe/Istanbul.
+# The digests start at 07:30 and 20:30, so the last runs before them (06:00, 20:00)
+# have 30 minutes, and the run limit is 14 minutes.
+
+[Unit]
+Description=my-news-tg-bot: collect and process every 2 hours
+
+[Timer]
+OnCalendar=*-*-* 00/2:00:00 Europe/Istanbul
+Persistent=true
+RandomizedDelaySec=0
+AccuracySec=1s
+
+[Install]
+WantedBy=timers.target

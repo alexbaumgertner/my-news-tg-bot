@@ -55,6 +55,22 @@ if node -e "process.exit(require('./package.json').scripts?.['db:migrate'] ? 0 :
   pnpm db:migrate
 fi
 
+# The deploy user cannot install units (no sudo for that, on purpose).
+# Compare the committed units with the installed copies and tell the owner.
+UNIT_DIR="/etc/systemd/system"
+CHANGED_UNITS=()
+for f in deploy/*.service deploy/*.timer; do
+  [[ -e "$f" ]] || continue
+  if ! cmp -s "$f" "${UNIT_DIR}/$(basename "$f")"; then
+    CHANGED_UNITS+=("$f")
+  fi
+done
+if [[ ${#CHANGED_UNITS[@]} -gt 0 ]]; then
+  log "WARNING: systemd units are new or changed: ${CHANGED_UNITS[*]}"
+  log "Install them by hand, once. See README, section 'Schedule':"
+  log "  cd ${APP_DIR} && sudo cp ${CHANGED_UNITS[*]} ${UNIT_DIR}/ && sudo systemctl daemon-reload"
+fi
+
 log "restart ${SERVICE}"
 sudo /usr/bin/systemctl enable --now "${SERVICE}"
 sudo /usr/bin/systemctl restart "${SERVICE}"

@@ -1,0 +1,14 @@
+# Send the morning digest at 07:30 Europe/Istanbul.
+
+[Unit]
+Description=my-news-tg-bot: morning digest at 07:30 Europe/Istanbul
+
+[Timer]
+OnCalendar=*-*-* 07:30:00 Europe/Istanbul
+Persistent=true
+RandomizedDelaySec=0
+AccuracySec=1s
+Unit=newsbot-digest@morning.service
+
+[Install]
+WantedBy=timers.target

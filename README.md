@@ -138,6 +138,47 @@ pnpm digest --slot morning
 
 The command prints one summary line: `Digest morning: sent, 6 stories, 1 messages`.
 
+## Schedule
+
+Systemd runs everything on `home-ubuntu`. The units are in `deploy/`.
+
+| Unit | What it does | When |
+| --- | --- | --- |
+| `my-news-tg-bot.service` | The long-running bot. `Restart=on-failure`, no start limit. | Always |
+| `newsbot-pipeline.timer` → `.service` | `collect`, then `process` (`deploy/run-pipeline.sh`). Limit: 14 minutes. | Every 2 hours, at even hours `Europe/Istanbul` |
+| `newsbot-digest-morning.timer` → `newsbot-digest@morning.service` | Morning digest | 07:30 `Europe/Istanbul` |
+| `newsbot-digest-evening.timer` → `newsbot-digest@evening.service` | Evening digest | 20:30 `Europe/Istanbul` |
+
+The pipeline and the digest share one lock (`/var/lib/newsbot/pipeline.lock`), so they never run at once. A pipeline run skips if the lock is busy. A digest waits up to 15 minutes. A failed run does not stop the timers. The timers use `Persistent=true`, so a run that was missed while the host was off starts after the boot.
+
+### Install the units (once, and after each unit change)
+
+The deploy user has no sudo for this. `deploy.sh` prints a message when a unit is new or changed. Run these commands on `home-ubuntu`:
+
+```bash
+cd /opt/my-news-tg-bot
+sudo cp deploy/my-news-tg-bot.service deploy/newsbot-pipeline.service deploy/newsbot-pipeline.timer \
+  deploy/newsbot-digest@.service deploy/newsbot-digest-morning.timer deploy/newsbot-digest-evening.timer \
+  /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now newsbot-pipeline.timer newsbot-digest-morning.timer newsbot-digest-evening.timer
+```
+
+After a reboot, the bot and the timers start by themselves.
+
+### Check and operate
+
+```bash
+systemctl list-timers 'newsbot-*'                      # next and last runs
+journalctl -u newsbot-pipeline -n 100                  # collect and process
+journalctl -u 'newsbot-digest@*' -n 100                # digests
+journalctl -u my-news-tg-bot -f                        # the bot
+sudo systemctl start newsbot-digest@morning.service    # run a digest by hand
+sudo systemctl start newsbot-pipeline.service          # run collect + process by hand
+```
+
+Validate the units without root: `pnpm test` runs `tests/deploy-units.test.ts`. On a host with systemd you can also run `systemd-analyze verify deploy/*.timer`.
+
 ## Working on this repo
 
 Development runs on GitHub. Each task is an issue. To give an issue to the agent, add the label **`claude`**. Claude Code then runs in GitHub Actions, implements the issue and opens a pull request. To ask for changes on a pull request, write a comment that starts with `@claude`. Details: [`docs/SPEC.md` §11](docs/SPEC.md#11-development-workflow).

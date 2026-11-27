@@ -1,0 +1,28 @@
+# One collect + process run. Started by newsbot-pipeline.timer.
+# Install: see README, section "Schedule".
+# The shared lock keeps this run and a digest apart. If a digest holds the
+# lock, this run skips (exit 75 counts as success).
+
+[Unit]
+Description=my-news-tg-bot: collect and process (one run)
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=newsbot
+Group=newsbot
+WorkingDirectory=/opt/my-news-tg-bot
+EnvironmentFile=/etc/my-news-tg-bot.env
+Environment=NODE_ENV=production
+StateDirectory=newsbot
+ExecStart=/usr/bin/flock -n -E 75 /var/lib/newsbot/pipeline.lock /opt/my-news-tg-bot/deploy/run-pipeline.sh
+SuccessExitStatus=75
+# A run must end at least 15 minutes before a digest (the timers start at even hours).
+TimeoutStartSec=14min
+Restart=no
+MemoryHigh=500M
+MemoryMax=700M
+NoNewPrivileges=true
+ProtectSystem=full
+PrivateTmp=true
