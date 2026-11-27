@@ -82,6 +82,10 @@ deploy/      systemd units and timers for home-ubuntu
 docs/        SPEC.md, DB.md (schema) and decisions
 ```
 
+## Interest profile
+
+Copy `config/profile.example.yaml` to `config/profile.yaml` and edit it. The bot reads the profile from `CONFIG_DIR` (default `./config`). The real file is in `.gitignore` and is not committed. `loadProfile` in `src/profile.ts` validates the file and rejects unknown fields.
+
 ## Working on this repo
 
 Development runs on GitHub. Each task is an issue. To give an issue to the agent, add the label **`claude`**. Claude Code then runs in GitHub Actions, implements the issue and opens a pull request. To ask for changes on a pull request, write a comment that starts with `@claude`. Details: [`docs/SPEC.md` §11](docs/SPEC.md#11-development-workflow).

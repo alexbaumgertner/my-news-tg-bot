@@ -1,0 +1,350 @@
+# Example interest profile. See docs/SPEC.md section 2.
+# Copy this file to config/profile.yaml and edit it. The real file is not committed.
+version: 1
+
+about_me: >-
+  I am a senior software engineer who works abroad. I use AI coding agents
+  every day. I care about agentic development, how people learn, and medicine.
+  I want a short digest with precise items. I do not want padding or hype.
+
+hard_exclusions:
+  description: >-
+    Reject Russian domestic politics. Reject crime, disasters and conflicts
+    that have no direct effect on me. Reject celebrity news, crypto hype and clickbait.
+  keywords:
+    - celebrity
+    - gossip
+    - crypto pump
+    - memecoin
+    - you won't believe
+    - shocking
+    - знаменитость
+    - сплетни
+    - криптопамп
+    - шок
+
+safety_exception:
+  description: >-
+    Events that directly affect safety or daily life in Turkey and Antalya always pass.
+    Show each one as a separate line.
+  keywords:
+    - Antalya
+    - Turkey earthquake
+    - Turkey wildfire
+    - Turkey flight disruption
+    - Анталья
+    - Турция землетрясение
+    - Турция пожар
+    - Турция отмена рейсов
+
+topics:
+  - id: agentic_ai
+    title: Agentic AI development
+    weight: 1.0
+    mode: digest
+    description: >-
+      New models from Anthropic, OpenAI, Google and open-weights labs.
+      Claude Code, agent tooling and MCP. Agentic development practices and
+      engineering-process manifestos.
+    keywords:
+      - Claude Code
+      - AI agent
+      - MCP
+      - Model Context Protocol
+      - agentic coding
+      - coding agent
+      - open-weights model
+      - Anthropic
+      - ИИ-агент
+      - агентная разработка
+      - языковая модель
+    stop_words:
+      - sponsored
+      - webinar
+      - giveaway
+
+  - id: learning_science
+    title: Learning science and education
+    weight: 1.0
+    mode: digest
+    description: >-
+      Research on memory and learning, and neuroscience. EdTech launches,
+      universities and programs. Language-learning technology.
+    keywords:
+      - spaced repetition
+      - memory consolidation
+      - learning science
+      - neuroscience
+      - EdTech
+      - language learning
+      - retrieval practice
+      - cognitive load
+      - интервальное повторение
+      - память
+      - нейронаука
+      - образовательные технологии
+    stop_words:
+      - coupon
+      - sponsored
+      - online course sale
+
+  - id: medicine_biology
+    title: Medicine and biology
+    weight: 1.0
+    mode: digest
+    description: >-
+      HHT: clinical trials, new drugs, guidelines and conferences. Genetics and
+      vascular medicine. Major breakthroughs that have a publication behind them.
+    keywords:
+      - HHT
+      - hereditary hemorrhagic telangiectasia
+      - clinical trial
+      - gene therapy
+      - vascular medicine
+      - genetics
+      - meta-analysis
+      - bevacizumab
+      - наследственная геморрагическая телеангиэктазия
+      - клиническое исследование
+      - генетика
+      - генная терапия
+    stop_words:
+      - miracle cure
+      - detox
+      - supplement
+
+  - id: web_stack
+    title: Web stack
+    weight: 0.6
+    mode: digest
+    description: >-
+      Releases and vulnerabilities in Next.js, React, Node.js, TypeScript,
+      Vercel, Payload CMS, Neon and Postgres. Chrome extensions, including
+      Manifest V3 and Chrome Web Store policy.
+    keywords:
+      - Next.js
+      - React
+      - Node.js
+      - TypeScript
+      - Vercel
+      - Payload CMS
+      - Neon
+      - Postgres
+      - Manifest V3
+      - Chrome Web Store
+      - уязвимость
+      - релиз
+    stop_words:
+      - tutorial roundup
+      - top 10
+      - sponsored
+
+  - id: indie_product
+    title: Indie hacking and product
+    weight: 0.6
+    mode: digest
+    description: >-
+      Solo-founder cases, especially in EdTech. Monetization of small SaaS.
+      Platform rules and fees.
+    keywords:
+      - indie hacker
+      - solo founder
+      - bootstrapped
+      - small SaaS
+      - monetization
+      - app store fees
+      - MRR
+      - pricing
+      - инди-хакер
+      - сольный основатель
+      - монетизация
+      - комиссия платформы
+    stop_words:
+      - get rich quick
+      - passive income
+      - course launch
+
+  - id: it_job_market
+    title: IT job market
+    weight: 0.6
+    mode: digest
+    description: >-
+      How AI changes hiring and developer roles. Large IT service companies.
+      Remote work.
+    keywords:
+      - developer hiring
+      - tech layoffs
+      - remote work
+      - software engineer jobs
+      - AI and developer roles
+      - IT outsourcing
+      - рынок труда IT
+      - удалённая работа
+      - увольнения в IT
+      - найм разработчиков
+    stop_words:
+      - resume tips
+      - interview hacks
+      - sponsored
+
+  - id: life_relocation
+    title: Life and relocation
+    weight: 0.6
+    mode: digest
+    description: >-
+      Turkey: work and residence permits, taxes and the TRY exchange rate, in brief.
+      EU: Blue Card, talent and entrepreneur visas, Germany in particular.
+      Georgia: rules for individual entrepreneurs.
+    keywords:
+      - residence permit
+      - work permit
+      - EU Blue Card
+      - entrepreneur visa
+      - individual entrepreneur Georgia
+      - Turkey tax
+      - USD/TRY
+      - вид на жительство
+      - разрешение на работу
+      - голубая карта ЕС
+      - ИП в Грузии
+      - налоги в Турции
+    stop_words:
+      - golden visa sale
+      - real estate offer
+      - citizenship for sale
+
+  - id: english_learning
+    title: English learning
+    weight: 0.6
+    mode: digest
+    description: >-
+      Material from English-learning channels. Reading at B2 to C1 level,
+      for example from The Economist.
+    keywords:
+      - English learning
+      - B2 reading
+      - C1 reading
+      - vocabulary
+      - The Economist
+      - phrasal verbs
+      - изучение английского
+      - английский язык
+      - лексика
+      - чтение на английском
+    stop_words:
+      - discount
+      - tutor ad
+      - promo code
+
+  - id: economy
+    title: Economy
+    weight: 0.3
+    mode: digest
+    description: >-
+      Only news that affects income or costs. USD/TRY. Tariffs and regulation
+      that hit the IT market.
+    keywords:
+      - USD/TRY
+      - tariffs
+      - IT regulation
+      - exchange rate
+      - digital services tax
+      - interest rate
+      - курс доллара
+      - курс лиры
+      - пошлины
+      - регулирование IT
+    stop_words:
+      - stock tips
+      - market rally
+      - forecast 2030
+
+  - id: sport
+    title: Sport
+    weight: 0.3
+    mode: digest
+    description: >-
+      Training research. Major volleyball tournaments, in one line.
+    keywords:
+      - training research
+      - strength training
+      - volleyball
+      - Olympic volleyball
+      - VNL
+      - exercise physiology
+      - тренировки
+      - волейбол
+      - исследование тренировок
+      - чемпионат мира по волейболу
+    stop_words:
+      - transfer rumor
+      - betting
+      - fan drama
+
+  - id: popular_science
+    title: Popular science and space
+    weight: 0.3
+    mode: digest
+    description: >-
+      Major discoveries in physics, biology and astronomy. Space missions.
+      Long reads from Quanta, Nature and New Scientist.
+    keywords:
+      - physics discovery
+      - astronomy
+      - space mission
+      - Quanta Magazine
+      - New Scientist
+      - James Webb
+      - black hole
+      - открытие в физике
+      - астрономия
+      - космическая миссия
+      - чёрная дыра
+    stop_words:
+      - horoscope
+      - UFO
+      - conspiracy
+
+  - id: history
+    title: History
+    weight: 0.3
+    mode: digest
+    description: >-
+      Posts from history channels that I follow, about Russian Empire history.
+      Show one line and no summary.
+    keywords:
+      - Russian Empire
+      - imperial Russia
+      - historical archive
+      - history channel
+      - история Российской империи
+      - императорская Россия
+      - архивные документы
+      - исторический канал
+    stop_words:
+      - alternate history
+      - meme
+      - politics today
+
+  - id: books
+    title: Books
+    weight: 0.3
+    mode: notice
+    description: >-
+      New releases from book channels and publishers on my topics. Show one
+      line with a link and no summary.
+    keywords:
+      - new release
+      - new book
+      - O'Reilly
+      - Manning
+      - Pragmatic Bookshelf
+      - publisher
+      - новинка
+      - новая книга
+      - издательство
+      - вышла книга
+    stop_words:
+      - pirated
+      - free download
+      - bestseller list
