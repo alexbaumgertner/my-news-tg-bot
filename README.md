@@ -48,6 +48,10 @@ Telegram ◄── deliver ◄── compose digest (strong LLM) ◄── rank 
 7. **Compose** with the same cheap model, in English by default (Russian or mixed on request).
 8. **Deliver** at 07:30 and 20:30 (Europe/Istanbul).
 
+## Deploy
+
+Install guide for a fresh Ubuntu host, updates, rollback, logs and the smoke test: [`docs/DEPLOY.md`](docs/DEPLOY.md).
+
 ## Tech stack
 
 | Part | Choice |
@@ -96,11 +100,7 @@ On a development machine with a database:
 pnpm collect
 ```
 
-On `home-ubuntu`, after a deploy (the file `/etc/my-news-tg-bot.env` is owned by `root:newsbot`, mode 640):
-
-```bash
-sudo -u newsbot bash -c 'set -a; . /etc/my-news-tg-bot.env; set +a; cd /opt/my-news-tg-bot && node dist/collect.js'
-```
+On `home-ubuntu`, see [`docs/DEPLOY.md`](docs/DEPLOY.md#8-run-commands-by-hand).
 
 The command prints one summary line: sources ok, not modified and failed, items fetched and items inserted. Exit code 0: at least one source succeeded, or nothing was due. Exit code 1: every due source failed, or the database is not reachable. A second run right after the first one does not duplicate items.
 
@@ -151,31 +151,9 @@ Systemd runs everything on `home-ubuntu`. The units are in `deploy/`.
 
 The pipeline and the digest share one lock (`/var/lib/newsbot/pipeline.lock`), so they never run at once. A pipeline run skips if the lock is busy. A digest waits up to 15 minutes. A failed run does not stop the timers. The timers use `Persistent=true`, so a run that was missed while the host was off starts after the boot.
 
-### Install the units (once, and after each unit change)
+### Install and operate
 
-The deploy user has no sudo for this. `deploy.sh` prints a message when a unit is new or changed. Run these commands on `home-ubuntu`:
-
-```bash
-cd /opt/my-news-tg-bot
-sudo cp deploy/my-news-tg-bot.service deploy/newsbot-pipeline.service deploy/newsbot-pipeline.timer \
-  deploy/newsbot-digest@.service deploy/newsbot-digest-morning.timer deploy/newsbot-digest-evening.timer \
-  /etc/systemd/system/
-sudo systemctl daemon-reload
-sudo systemctl enable --now newsbot-pipeline.timer newsbot-digest-morning.timer newsbot-digest-evening.timer
-```
-
-After a reboot, the bot and the timers start by themselves.
-
-### Check and operate
-
-```bash
-systemctl list-timers 'newsbot-*'                      # next and last runs
-journalctl -u newsbot-pipeline -n 100                  # collect and process
-journalctl -u 'newsbot-digest@*' -n 100                # digests
-journalctl -u my-news-tg-bot -f                        # the bot
-sudo systemctl start newsbot-digest@morning.service    # run a digest by hand
-sudo systemctl start newsbot-pipeline.service          # run collect + process by hand
-```
+Install steps (once, and after each unit change), the logs and the commands to check the timers are in [`docs/DEPLOY.md`](docs/DEPLOY.md#5-systemd-units-one-time). `deploy.sh` prints a message when a unit is new or changed.
 
 Validate the units without root: `pnpm test` runs `tests/deploy-units.test.ts`. On a host with systemd you can also run `systemd-analyze verify deploy/*.timer`.
 
