@@ -234,3 +234,15 @@ export const vocabSeen = pgTable(
   },
   (t) => [unique("vocab_seen_user_word_uq").on(t.userId, t.language, t.word)],
 );
+
+/** Per-user bot settings: output language and digest times. One row per user. */
+export const userSettings = pgTable("user_settings", {
+  userId: userId().primaryKey(),
+  language: text("language").notNull().default("en"),
+  /** Local times "HH:MM" for the morning and evening digests. */
+  morningTime: text("morning_time").notNull().default("07:30"),
+  eveningTime: text("evening_time").notNull().default("20:30"),
+  timezone: text("timezone").notNull().default("Europe/Istanbul"),
+  chatId: bigint("chat_id", { mode: "number" }),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});

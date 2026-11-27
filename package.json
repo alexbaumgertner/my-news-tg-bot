@@ -24,6 +24,7 @@
     "drizzle-orm": "^0.45.4",
     "fast-xml-parser": "^5.12.1",
     "franc-min": "^6.2.0",
+    "grammy": "^1.48.0",
     "linkedom": "^0.18.15",
     "pino": "^10.4.0",
     "postgres": "^4.1.1",

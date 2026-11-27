@@ -12,6 +12,7 @@ Storage is PostgreSQL with the `pgvector` extension. The schema is in `src/db/sc
 
 | Table | Purpose | Key constraints |
 |---|---|---|
+| `user_settings` | Bot settings per user: language, digest times, time zone, chat id. | primary key `user_id` |
 | `sources` | Source registry, copied from `config/sources.yaml`. | unique `(user_id, slug)` | Fetch state: `last_fetched_at` (last attempt), `last_success_at`, `last_failure_at`, `last_error`, `consecutive_failures`, `etag`, `last_modified`.
 | `items` | One fetched article. Has an optional `embedding` and a `story_id`. | unique `(user_id, canonical_url)`, unique `(user_id, content_hash)` |
 | `stories` | A group of items about one event. Has an `embedding`. | none |
