@@ -16,7 +16,7 @@ import { randomUUID } from "node:crypto";
 import type { Db } from "../db/client.js";
 import { digestItems, digests, items, llmUsage, scores, sources, stories } from "../db/schema.js";
 import type { ComposeStory } from "../llm/compose-schema.js";
-import { loadAdjustments } from "../feedback/store.js";
+import { loadAdjustments, recomputeAdjustments } from "../feedback/store.js";
 import { DEFAULT_FEEDBACK_CONFIG, type FeedbackConfig } from "../feedback/rules.js";
 import {
   DEFAULT_RANK_OPTIONS,
@@ -236,23 +236,37 @@ export function createDbDigestStore(options: DbDigestStoreOptions): DigestStore 
           })
           .returning({ id: digests.id });
         if (!row) return null;
-        // Items of an earlier attempt belong to a row that this claim took over.
-        await tx.delete(digestItems).where(eq(digestItems.digestId, row.id));
-        if (digest.items.length > 0) {
-          await tx.insert(digestItems).values(
-            digest.items.map((item, index) => ({
-              userId,
-              digestId: row.id,
-              storyId: item.storyId,
-              position: index + 1,
-              headline: item.headline,
-              summary: item.summary,
-              whyMe: item.whyMe,
-              url: item.url,
-            })),
-          );
+        // Items of an earlier attempt belong to a row that this claim took over. Delete them.
+        // New rows get new ids (identity column), so a button of the earlier attempt matches
+        // nothing. Votes on the deleted items go with them, so recompute the adjustments.
+        const deleted = await tx
+          .delete(digestItems)
+          .where(eq(digestItems.digestId, row.id))
+          .returning({ id: digestItems.id });
+        if (deleted.length > 0) {
+          await tx.execute(sql`select pg_advisory_xact_lock(${userId})`);
+          await recomputeAdjustments(tx, userId, options.feedback ?? DEFAULT_FEEDBACK_CONFIG);
         }
-        return { digestId: row.id, token };
+        let itemIds: number[] = [];
+        if (digest.items.length > 0) {
+          const inserted = await tx
+            .insert(digestItems)
+            .values(
+              digest.items.map((item, index) => ({
+                userId,
+                digestId: row.id,
+                storyId: item.storyId,
+                position: index + 1,
+                headline: item.headline,
+                summary: item.summary,
+                whyMe: item.whyMe,
+                url: item.url,
+              })),
+            )
+            .returning({ id: digestItems.id, position: digestItems.position });
+          itemIds = inserted.sort((a, b) => a.position - b.position).map((r) => r.id);
+        }
+        return { digestId: row.id, token, itemIds };
       });
     },
 

@@ -12,7 +12,7 @@ import {
   type Vote,
 } from "./rules.js";
 
-/** What happened to a vote. `not_found`: the item does not exist for this user. */
+/** What happened to a vote. `not_found`: the item does not exist for this user, or a newer attempt replaced it. */
 export type VoteOutcome = { status: "not_found" } | { status: "stored"; vote: Vote | null };
 
 /** Stores votes. The bot uses it, and tests can fake it. */
@@ -30,13 +30,7 @@ export function createDbFeedbackStore(db: Db, config: FeedbackConfig): FeedbackS
         const [item] = await tx
           .select({ id: digestItems.id, storyId: digestItems.storyId })
           .from(digestItems)
-          .where(
-            and(
-              eq(digestItems.userId, userId),
-              eq(digestItems.digestId, action.digestId),
-              eq(digestItems.position, action.position),
-            ),
-          );
+          .where(and(eq(digestItems.userId, userId), eq(digestItems.id, action.digestItemId)));
         if (!item) return { status: "not_found" } as const;
 
         const [existing] = await tx
@@ -71,7 +65,7 @@ export function createDbFeedbackStore(db: Db, config: FeedbackConfig): FeedbackS
   };
 }
 
-type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
+export type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
 
 /** The topics and the source of a story now. The score of the current representative wins. */
 async function snapshotStory(
@@ -107,7 +101,11 @@ async function snapshotStory(
 }
 
 /** Rewrite `weight_adjustments` of the user from all stored votes. */
-async function recomputeAdjustments(tx: Tx, userId: number, config: FeedbackConfig): Promise<void> {
+export async function recomputeAdjustments(
+  tx: Tx,
+  userId: number,
+  config: FeedbackConfig,
+): Promise<void> {
   const votes = await tx
     .select({ kind: feedback.kind, topics: feedback.topics, sourceId: feedback.sourceId })
     .from(feedback)

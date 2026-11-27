@@ -66,6 +66,7 @@ interface Row {
 /** In-memory store. It ranks the stories that no sent digest contains, as the database does. */
 class FakeStore implements DigestStore {
   rows: Row[] = [];
+  itemSeq = 100;
   created = 0;
   filtered = { items: 214, sources: 38 };
   filteredCalls: number[][] = [];
@@ -149,7 +150,9 @@ class FakeStore implements DigestStore {
       messageIds: [],
       items: d.items,
     });
-    return { digestId: this.created, token };
+    // Item ids are never reused, also across attempts. Same as an identity column.
+    const itemIds = d.items.map(() => ++this.itemSeq);
+    return { digestId: this.created, token, itemIds };
   }
 
   private owned(claim: DigestClaim) {
@@ -257,7 +260,7 @@ describe("runDigest", () => {
     expect(store.rows[0]!.items.map((i) => i.storyId)).toEqual([1, 2]);
     // The footer counts exclude the shown stories.
     expect(store.filteredCalls[0]).toEqual([1, 2]);
-    // One row of 👍 and 👎 buttons for each item. The data holds the digest id and the position.
+    // One row of 👍 and 👎 buttons for each item. The data holds the digest item id.
     expect(
       sender.sent[0]!.replyMarkup?.inline_keyboard.map((row) => row.map((b) => b.text)),
     ).toEqual([
@@ -265,7 +268,7 @@ describe("runDigest", () => {
       ["👍 2", "👎 2"],
     ]);
     expect(sender.sent[0]!.replyMarkup?.inline_keyboard[1]![0]).toMatchObject({
-      callback_data: `f:${store.rows[0]!.id}:2:u`,
+      callback_data: "f:102:u",
     });
     const calls = provider!.requests.length;
 

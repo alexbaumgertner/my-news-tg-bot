@@ -20,41 +20,43 @@ const vote = (kind: "up" | "down", topics: string[], sourceId: number | null = 1
 });
 
 describe("callback data", () => {
-  it("round-trips and stays under the 64-byte limit", () => {
-    const action = { digestId: 999_999_999_999, position: 12, vote: "down" as const };
+  it("round-trips and stays under the 64-byte limit for the largest ids", () => {
+    const action = { digestItemId: Number.MAX_SAFE_INTEGER, vote: "down" as const };
     const data = encodeFeedback(action);
-    expect(data).toBe("f:999999999999:12:d");
+    expect(data).toBe("f:9007199254740991:d");
     expect(Buffer.byteLength(data)).toBeLessThanOrEqual(64);
     expect(parseFeedback(data)).toEqual(action);
-    expect(parseFeedback("f:5:1:u")).toEqual({ digestId: 5, position: 1, vote: "up" });
+    expect(parseFeedback("f:5:u")).toEqual({ digestItemId: 5, vote: "up" });
   });
 
   it("rejects anything else", () => {
     for (const bad of [
       "",
-      "x:1:1:u",
-      "f:1:1:x",
-      "f:0:1:u",
-      "f:1:0:u",
-      "f:1:1:u:extra",
-      "f:-1:1:u",
-      "f:1e3:1:u",
-      "f:1:1",
+      "x:1:u",
+      "f:1:x",
+      "f:0:u",
+      "f:1:u:extra",
+      "f:1:1:u",
+      "f:-1:u",
+      "f:1e3:u",
+      "f:1",
+      "f:99999999999999999999:u",
     ]) {
       expect(parseFeedback(bad), bad).toBeNull();
     }
   });
 
-  it("builds one row with two buttons for each item", () => {
-    const keyboard = feedbackKeyboard(7, [3, 4]);
+  it("builds one row with two buttons for each item, from the item ids", () => {
+    // Positions 3 and 4 of a digest whose items have the ids 21..25.
+    const keyboard = feedbackKeyboard([3, 4], [21, 22, 23, 24, 25]);
     expect(keyboard.inline_keyboard).toEqual([
       [
-        { text: "👍 3", callback_data: "f:7:3:u" },
-        { text: "👎 3", callback_data: "f:7:3:d" },
+        { text: "👍 3", callback_data: "f:23:u" },
+        { text: "👎 3", callback_data: "f:23:d" },
       ],
       [
-        { text: "👍 4", callback_data: "f:7:4:u" },
-        { text: "👎 4", callback_data: "f:7:4:d" },
+        { text: "👍 4", callback_data: "f:24:u" },
+        { text: "👎 4", callback_data: "f:24:d" },
       ],
     ]);
   });
@@ -156,11 +158,11 @@ describe("callback_query handler", () => {
     calls = 0;
     async press(
       userId: number,
-      action: { digestId: number; position: number; vote: "up" | "down" },
+      action: { digestItemId: number; vote: "up" | "down" },
     ): Promise<VoteOutcome> {
       this.calls++;
-      if (action.digestId === 404) return { status: "not_found" };
-      const key = `${userId}:${action.digestId}:${action.position}`;
+      if (action.digestItemId === 404) return { status: "not_found" };
+      const key = `${userId}:${action.digestItemId}`;
       const next = nextVote(this.votes.get(key) ?? null, action.vote);
       if (next) this.votes.set(key, next);
       else this.votes.delete(key);
@@ -197,15 +199,15 @@ describe("callback_query handler", () => {
 
   it("ignores a press from another user and answers nothing", async () => {
     const { store, calls, press } = setup();
-    await press(2, "f:1:1:u");
+    await press(2, "f:1:u");
     expect(store.calls).toBe(0);
     expect(calls).toEqual([]);
   });
 
   it("stores the vote of the owner and acknowledges it", async () => {
     const { store, calls, press } = setup();
-    await press(1, "f:1:1:u");
-    expect(store.votes.get("1:1:1")).toBe("up");
+    await press(1, "f:1:u");
+    expect(store.votes.get("1:1")).toBe("up");
     expect(calls).toHaveLength(1);
     expect(calls[0]!.method).toBe("answerCallbackQuery");
     expect(calls[0]!.payload).toMatchObject({ callback_query_id: "cb1", text: "👍 Noted" });
@@ -213,21 +215,23 @@ describe("callback_query handler", () => {
 
   it("changes the vote on the other button and clears it on a repeated press", async () => {
     const { store, calls, press } = setup();
-    await press(1, "f:1:1:u");
-    await press(1, "f:1:1:d");
-    expect(store.votes.get("1:1:1")).toBe("down");
-    await press(1, "f:1:1:d");
+    await press(1, "f:1:u");
+    await press(1, "f:1:d");
+    expect(store.votes.get("1:1")).toBe("down");
+    await press(1, "f:1:d");
     expect(store.votes.size).toBe(0);
     expect(calls.map((c) => c.payload.text)).toEqual(["👍 Noted", "👎 Noted", "Vote removed"]);
   });
 
   it("answers a press on an unknown item, and ignores a payload that is not feedback", async () => {
     const { store, calls, press } = setup();
-    await press(1, "f:404:1:u");
+    await press(1, "f:404:u");
     await press(1, "other");
     expect(store.calls).toBe(1);
     expect(calls.map((c) => c.method)).toEqual(["answerCallbackQuery", "answerCallbackQuery"]);
-    expect(calls[0]!.payload.text).toBe("This item is no longer available.");
+    expect(calls[0]!.payload.text).toBe(
+      "This digest was replaced. Use the buttons of the newest one.",
+    );
     expect(calls[1]!.payload.text).toBeUndefined();
   });
 
@@ -237,7 +241,7 @@ describe("callback_query handler", () => {
     const spy = console.error;
     console.error = () => {};
     try {
-      await press(1, "f:1:1:u");
+      await press(1, "f:1:u");
     } finally {
       console.error = spy;
     }

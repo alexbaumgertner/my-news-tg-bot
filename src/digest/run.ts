@@ -83,6 +83,8 @@ export interface DigestStore {
 export interface DigestClaim {
   digestId: number;
   token: string;
+  /** Database ids of the saved items of this attempt. `itemIds[position - 1]` is the item at `position`. */
+  itemIds: number[];
 }
 
 export interface DigestRunOptions {
@@ -314,7 +316,8 @@ export async function runDigest(options: DigestRunOptions): Promise<DigestResult
     for (const [index, message] of messages.entries()) {
       // One row of buttons for each item in the message. A message without items has none.
       const positions = messageItems[index] ?? [];
-      const keyboard = positions.length > 0 ? feedbackKeyboard(digestId, positions) : undefined;
+      const keyboard =
+        positions.length > 0 ? feedbackKeyboard(positions, claim.itemIds) : undefined;
       messageIds.push(await options.sender.send(options.chatId, message, keyboard));
     }
   } catch (error) {

@@ -107,7 +107,8 @@ export function createBot(deps: BotDeps): Bot {
     let text: string;
     try {
       const outcome = await feedbackStore.press(ownerId, action);
-      if (outcome.status === "not_found") text = "This item is no longer available.";
+      if (outcome.status === "not_found")
+        text = "This digest was replaced. Use the buttons of the newest one.";
       else if (outcome.vote === "up") text = "👍 Noted";
       else if (outcome.vote === "down") text = "👎 Noted";
       else text = "Vote removed";
