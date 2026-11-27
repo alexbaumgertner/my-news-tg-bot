@@ -1,0 +1,4 @@
+id,source,lang,title,url,published_at,snippet,dup_group,label,topics,reason
+bbbb000000000002,nature-news,en,Second item,https://example.com/2,2026-11-01T00:00:00.000Z,Snippet two,,drop,,Press release without data
+aaaa000000000001,meduza,ru,Первая новость,https://example.com/1,2026-11-02T00:00:00.000Z,Текст,1,keep,science_space; medicine_hht,Primary source
+cccc000000000003,hn,en,Not labeled,https://example.com/3,,,,,,

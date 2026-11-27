@@ -8,3 +8,4 @@ coverage/
 config/profile.yaml
 logs/
 .DS_Store
+tmp/

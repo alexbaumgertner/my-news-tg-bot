@@ -16,10 +16,14 @@
     "lint": "eslint . && prettier --check .",
     "format": "prettier --write .",
     "db:generate": "drizzle-kit generate",
-    "db:migrate": "tsx src/db/migrate.ts"
+    "db:migrate": "tsx src/db/migrate.ts",
+    "golden:export": "tsx scripts/golden-export.ts",
+    "golden:build": "tsx scripts/golden-build.ts"
   },
   "dependencies": {
     "@mozilla/readability": "^0.6.0",
+    "csv-parse": "^7.0.3",
+    "csv-stringify": "^6.9.0",
     "dotenv": "^18.0.10",
     "drizzle-orm": "^0.45.4",
     "fast-xml-parser": "^5.12.1",
