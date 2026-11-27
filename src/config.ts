@@ -26,6 +26,8 @@ const envSchema = z.object({
   EMBEDDINGS_MODEL: z.string().min(1).default("voyage-3.5"),
   DEDUP_SIMILARITY_THRESHOLD: z.coerce.number().gt(0).max(1).default(0.88),
   DEDUP_WINDOW_HOURS: z.coerce.number().positive().max(720).default(48),
+  PREFILTER_MIN_SIMILARITY: z.coerce.number().min(-1).max(1).default(0.4),
+  PREFILTER_WEIGHT_DISCOUNT: z.coerce.number().min(0).max(1).default(0.05),
   HTTP_USER_AGENT: z.string().min(1).default("my-news-tg-bot/0.1"),
   NCBI_API_KEY: z.string().optional(),
   HN_MIN_SCORE: z.coerce.number().int().min(0).default(100),

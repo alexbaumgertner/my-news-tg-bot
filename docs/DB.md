@@ -15,7 +15,7 @@ Storage is PostgreSQL with the `pgvector` extension. The schema is in `src/db/sc
 | `user_settings` | Bot settings per user: language, digest times, time zone, chat id. | primary key `user_id` |
 | `sources` | Source registry, copied from `config/sources.yaml`. | unique `(user_id, slug)` | Fetch state: `last_fetched_at` (last attempt), `last_success_at`, `last_failure_at`, `last_error`, `consecutive_failures`, `etag`, `last_modified`.
 | `items` | One fetched article. Has an optional `embedding` and a `story_id`. | unique `(user_id, canonical_url)`, unique `(user_id, content_hash)` |
-| `stories` | A group of items about one event. Has an `embedding` (of the representative item), `last_item_at` (the clustering window counts from it) and `representative_item_id`. | none |
+| `stories` | A group of items about one event. Has an `embedding` (of the representative item), `last_item_at` (the clustering window counts from it) and `representative_item_id`. The pre-filter writes `prefilter_status` (`passed` or `dropped`, null until decided), `prefilter_reason`, `prefilter_topics`, `prefilter_similarity` and `prefilter_at`. | none |
 | `scores` | LLM score of a story (topics, relevance 0–10, impact, `why_me`, novelty, confidence). | unique `(story_id, prompt_version)` |
 | `digests` | One digest that the bot sent (kind, language, times). | none |
 | `digest_items` | A story inside a digest, with the text that was sent. | unique `(digest_id, story_id)` |

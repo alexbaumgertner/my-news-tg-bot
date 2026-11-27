@@ -76,9 +76,26 @@ export const stories = pgTable(
       (): AnyPgColumn => items.id,
       { onDelete: "set null" },
     ),
+    /** Pre-filter decision: "passed" or "dropped". Null until the pre-filter has seen the story. */
+    prefilterStatus: text("prefilter_status"),
+    /** Why the pre-filter decided so: safety, keyword, similarity, fail_open, hard_exclusion, stop_word or no_match. */
+    prefilterReason: text("prefilter_reason"),
+    /** Topic ids that matched a keyword, or the best topic by similarity. */
+    prefilterTopics: text("prefilter_topics")
+      .array()
+      .notNull()
+      .default(sql`'{}'::text[]`),
+    /** Cosine similarity to the best topic. Null when the similarity was not computed. */
+    prefilterSimilarity: real("prefilter_similarity"),
+    prefilterAt: timestamp("prefilter_at", { withTimezone: true }),
     createdAt: createdAt(),
   },
   (t) => [
+    check(
+      "stories_prefilter_status_ck",
+      sql`${t.prefilterStatus} is null or ${t.prefilterStatus} in ('passed', 'dropped')`,
+    ),
+    index("stories_user_prefilter_idx").on(t.userId, t.prefilterStatus, t.id),
     index("stories_user_first_seen_idx").on(t.userId, t.firstSeenAt),
     index("stories_user_last_item_idx").on(t.userId, t.lastItemAt),
     index("stories_embedding_idx").using("hnsw", t.embedding.op("vector_cosine_ops")),
