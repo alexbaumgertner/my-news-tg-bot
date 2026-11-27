@@ -163,6 +163,23 @@ describe.skipIf(!url)("digest run on the database", () => {
 
       expect((await run()).status).toBe("already_sent");
       expect(sent).toHaveLength(1);
+
+      // Claims. A second claim of an active slot fails. An expired lease is taken over.
+      const store = createDbDigestStore({ db, userId: 1, profile, windowHours: 24 });
+      const slot = { kind: "evening" as const, date: "2026-01-01", language: "en" as const };
+      const t0 = new Date("2026-01-01T10:00:00Z");
+      const claim = (await store.claimDigest({ ...slot, items: [] }, t0))!;
+      expect(
+        await store.claimDigest({ ...slot, items: [] }, new Date(t0.getTime() + 1000)),
+      ).toBeNull();
+      const late = new Date(t0.getTime() + 11 * 60_000);
+      const taken = (await store.claimDigest({ ...slot, items: [] }, late))!;
+      expect(taken.digestId).toBe(claim.digestId);
+      await expect(store.markSent(claim, [1], late)).rejects.toThrow("no longer owns");
+      await store.markSent(taken, [1], late);
+      expect(
+        await store.claimDigest({ ...slot, items: [] }, new Date(late.getTime() + 3_600_000)),
+      ).toBeNull();
     } finally {
       await client.end();
     }

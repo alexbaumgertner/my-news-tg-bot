@@ -34,15 +34,33 @@ export interface DigestStore {
     since: Date,
     shownStoryIds: number[],
   ): Promise<{ items: number; sources: number }>;
-  /** Save the digest as not sent. It replaces an earlier digest of the slot that was not sent. */
-  createDigest(digest: {
-    kind: DigestKind;
-    date: string;
-    language: DigestLanguage;
-    items: DigestItemRecord[];
-  }): Promise<number>;
-  /** Mark the digest as sent. Its stories now count as already sent. */
-  markSent(digestId: number, messageIds: number[], sentAt: Date): Promise<void>;
+  /**
+   * Take the slot and save the digest as not sent. Atomic. Returns null when the slot is
+   * sent, or when another run holds an active claim. Takes over a failed digest, or a claim
+   * whose lease expired (a crashed run). Never replaces an active claim.
+   */
+  claimDigest(
+    digest: {
+      kind: DigestKind;
+      date: string;
+      language: DigestLanguage;
+      items: DigestItemRecord[];
+    },
+    now: Date,
+  ): Promise<DigestClaim | null>;
+  /**
+   * Mark the digest as sent. Its stories now count as already sent.
+   * Throws when the claim was lost, so that a double send is never reported as success.
+   */
+  markSent(claim: DigestClaim, messageIds: number[], sentAt: Date): Promise<void>;
+  /** Give the claim up after a failed send, so that a retry can take the slot at once. */
+  releaseClaim(claim: DigestClaim): Promise<void>;
+}
+
+/** Proof that a run owns the slot. */
+export interface DigestClaim {
+  digestId: number;
+  token: string;
 }
 
 export interface DigestRunOptions {
@@ -72,7 +90,7 @@ export interface DigestRunOptions {
   monthlyLimitUsd: number;
 }
 
-export type DigestStatus = "sent" | "already_sent" | "dry_run";
+export type DigestStatus = "sent" | "already_sent" | "in_progress" | "dry_run";
 
 export interface DigestResult {
   status: DigestStatus;
@@ -115,7 +133,7 @@ export async function runDigest(options: DigestRunOptions): Promise<DigestResult
       );
       return { status: "already_sent", stories: 0, messages: 0, digestId: existing.id };
     }
-    if (existing) logger.warn({ kind, date }, "An earlier send of this slot failed. Retrying.");
+    if (existing) logger.warn({ kind, date }, "An earlier run of this slot did not send. Trying.");
   }
 
   const ranked = await store.rank(kind, now);
@@ -196,7 +214,15 @@ export async function runDigest(options: DigestRunOptions): Promise<DigestResult
     };
   }
 
-  const digestId = await store.createDigest({ kind, date, language, items: records });
+  const claim = await store.claimDigest(
+    { kind, date, language, items: records },
+    (options.now ?? (() => new Date()))(),
+  );
+  if (!claim) {
+    logger.warn({ kind, date }, "Another run holds this slot, or it was sent. Nothing sent.");
+    return { status: "in_progress", stories: 0, messages: 0, digestId: null };
+  }
+  const digestId = claim.digestId;
   const messageIds: number[] = [];
   try {
     for (const message of messages) {
@@ -215,9 +241,13 @@ export async function runDigest(options: DigestRunOptions): Promise<DigestResult
       },
       "Send failed. The digest stays unsent. Run the command again to retry.",
     );
+    await store.releaseClaim(claim).catch((releaseError: unknown) => {
+      // The lease expiry frees the slot later.
+      logger.warn({ error: errorMessage(releaseError) }, "Could not release the claim");
+    });
     throw new Error(`Telegram send failed: ${errorMessage(error)}`, { cause: error });
   }
-  await store.markSent(digestId, messageIds, new Date());
+  await store.markSent(claim, messageIds, new Date());
   logger.info(
     { kind, date, digestId, stories: records.length, messages: messageIds.length },
     "Digest sent",

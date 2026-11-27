@@ -7,16 +7,18 @@ import {
   gte,
   inArray,
   isNull,
+  lt,
   notInArray,
   or,
   sql,
 } from "drizzle-orm";
+import { randomUUID } from "node:crypto";
 import type { Db } from "../db/client.js";
 import { digestItems, digests, items, scores, sources, stories } from "../db/schema.js";
 import type { ComposeStory } from "../llm/compose-schema.js";
 import { rankDigest, type RankOptions } from "../pipeline/rank.js";
 import type { Profile } from "../profile.js";
-import type { DigestStore } from "./run.js";
+import type { DigestClaim, DigestStore } from "./run.js";
 
 export interface DbDigestStoreOptions {
   db: Db;
@@ -24,11 +26,24 @@ export interface DbDigestStoreOptions {
   profile: Profile;
   windowHours: number;
   rankOptions?: RankOptions;
+  /** How long a claim blocks other runs of the slot. Default: 10 minutes. */
+  leaseMs?: number;
 }
+
+const DEFAULT_LEASE_MS = 10 * 60_000;
 
 /** `DigestStore` on PostgreSQL. */
 export function createDbDigestStore(options: DbDigestStoreOptions): DigestStore {
   const { db, userId } = options;
+  const leaseMs = options.leaseMs ?? DEFAULT_LEASE_MS;
+  /** The row of a claim, only while the claim is still held by this run. */
+  const ownedBy = (claim: DigestClaim) =>
+    and(
+      eq(digests.id, claim.digestId),
+      eq(digests.userId, userId),
+      eq(digests.status, "claimed"),
+      eq(digests.claimToken, claim.token),
+    );
   return {
     async findDigest(kind, date) {
       const [row] = await db
@@ -119,20 +134,13 @@ export function createDbDigestStore(options: DbDigestStoreOptions): DigestStore 
       return { items: row?.items ?? 0, sources: row?.sources ?? 0 };
     },
 
-    async createDigest(digest) {
+    async claimDigest(digest, now) {
+      const token = randomUUID();
+      const leaseStart = new Date(now.getTime() - leaseMs);
       return db.transaction(async (tx) => {
-        // A digest of this slot that was not sent is replaced. The cascade removes its items.
-        await tx
-          .delete(digests)
-          .where(
-            and(
-              eq(digests.userId, userId),
-              eq(digests.kind, digest.kind),
-              eq(digests.digestDate, digest.date),
-              isNull(digests.sentAt),
-            ),
-          );
-        // The unique constraint rejects a second digest of the same slot and day.
+        // One atomic statement. The insert takes a free slot. The conflict branch takes over
+        // only a failed row or a claim with an expired lease. A sent row or an active claim
+        // is not touched, so no row is returned and the caller does not send.
         const [row] = await tx
           .insert(digests)
           .values({
@@ -140,14 +148,34 @@ export function createDbDigestStore(options: DbDigestStoreOptions): DigestStore 
             kind: digest.kind,
             language: digest.language,
             digestDate: digest.date,
+            status: "claimed",
+            claimedAt: now,
+            claimToken: token,
+          })
+          .onConflictDoUpdate({
+            target: [digests.userId, digests.kind, digests.digestDate],
+            set: {
+              language: digest.language,
+              status: "claimed",
+              claimedAt: now,
+              claimToken: token,
+              sentAt: null,
+              telegramMessageIds: null,
+            },
+            setWhere: or(
+              eq(digests.status, "failed"),
+              and(eq(digests.status, "claimed"), lt(digests.claimedAt, leaseStart)),
+            ),
           })
           .returning({ id: digests.id });
-        const digestId = row!.id;
+        if (!row) return null;
+        // Items of an earlier attempt belong to a row that this claim took over.
+        await tx.delete(digestItems).where(eq(digestItems.digestId, row.id));
         if (digest.items.length > 0) {
           await tx.insert(digestItems).values(
             digest.items.map((item, index) => ({
               userId,
-              digestId,
+              digestId: row.id,
               storyId: item.storyId,
               position: index + 1,
               headline: item.headline,
@@ -157,15 +185,23 @@ export function createDbDigestStore(options: DbDigestStoreOptions): DigestStore 
             })),
           );
         }
-        return digestId;
+        return { digestId: row.id, token };
       });
     },
 
-    async markSent(digestId, messageIds, sentAt) {
-      await db
+    async markSent(claim, messageIds, sentAt) {
+      const updated = await db
         .update(digests)
-        .set({ sentAt, telegramMessageIds: messageIds })
-        .where(and(eq(digests.id, digestId), eq(digests.userId, userId)));
+        .set({ status: "sent", sentAt, telegramMessageIds: messageIds })
+        .where(ownedBy(claim))
+        .returning({ id: digests.id });
+      if (updated.length === 0) {
+        throw new Error(`Digest ${claim.digestId} was sent, but this run no longer owns its claim`);
+      }
+    },
+
+    async releaseClaim(claim) {
+      await db.update(digests).set({ status: "failed" }).where(ownedBy(claim));
     },
   };
 }

@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   localDate,
   runDigest,
+  type DigestClaim,
   type DigestItemRecord,
   type DigestRunOptions,
   type DigestStore,
@@ -33,6 +34,7 @@ const profile = profileSchema.parse({
 
 const logger = pino({ level: "silent" });
 const now = new Date("2026-11-27T04:30:00Z");
+const LEASE_MS = 10 * 60_000;
 
 function ranked(storyId: number): RankedStory {
   return {
@@ -53,6 +55,9 @@ interface Row {
   kind: DigestKind;
   date: string;
   sentAt: Date | null;
+  status: "claimed" | "sent" | "failed";
+  claimedAt: Date;
+  token: string;
   messageIds: number[];
   items: DigestItemRecord[];
 }
@@ -97,28 +102,50 @@ class FakeStore implements DigestStore {
     return this.filtered;
   }
 
-  async createDigest(d: { kind: DigestKind; date: string; items: DigestItemRecord[] }) {
-    this.created++;
-    // Replace an unsent digest of the slot. Refuse a second digest of a sent slot.
+  async claimDigest(
+    d: { kind: DigestKind; date: string; items: DigestItemRecord[] },
+    at: Date,
+  ): Promise<DigestClaim | null> {
     const old = this.rows.find((r) => r.kind === d.kind && r.date === d.date);
-    if (old?.sentAt) throw new Error("unique constraint digests_user_slot_date_uq");
-    this.rows = this.rows.filter((r) => r !== old);
-    const id = this.created;
+    if (old) {
+      const expired = at.getTime() - old.claimedAt.getTime() > LEASE_MS;
+      const takeable = old.status === "failed" || (old.status === "claimed" && expired);
+      if (!takeable) return null;
+      this.rows = this.rows.filter((r) => r !== old);
+    }
+    this.created++;
+    const token = `token-${this.created}`;
     this.rows.push({
-      id,
+      id: this.created,
       kind: d.kind,
       date: d.date,
       sentAt: null,
+      status: "claimed",
+      claimedAt: at,
+      token,
       messageIds: [],
       items: d.items,
     });
-    return id;
+    return { digestId: this.created, token };
   }
 
-  async markSent(id: number, messageIds: number[], sentAt: Date) {
-    const row = this.rows.find((r) => r.id === id)!;
+  private owned(claim: DigestClaim) {
+    return this.rows.find(
+      (r) => r.id === claim.digestId && r.token === claim.token && r.status === "claimed",
+    );
+  }
+
+  async markSent(claim: DigestClaim, messageIds: number[], sentAt: Date) {
+    const row = this.owned(claim);
+    if (!row) throw new Error("claim lost");
+    row.status = "sent";
     row.sentAt = sentAt;
     row.messageIds = messageIds;
+  }
+
+  async releaseClaim(claim: DigestClaim) {
+    const row = this.owned(claim);
+    if (row) row.status = "failed";
   }
 }
 
@@ -244,6 +271,75 @@ describe("runDigest", () => {
     expect(store.rows).toHaveLength(1);
     expect(store.rows[0]!.sentAt).not.toBeNull();
     expect(await store.rank()).toEqual([]);
+  });
+
+  it("does not send or delete anything when a second run starts during the first send", async () => {
+    const { store, sender, options } = setup([1, 2]);
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    const started = new Promise<void>((resolve) => {
+      sender.send = async (chatId, html) => {
+        resolve();
+        await gate;
+        sender.sent.push({ chatId, html });
+        return 101;
+      };
+    });
+    const first = runDigest(options());
+    await started;
+    const second = await runDigest(options());
+    expect(second.status).toBe("in_progress");
+    expect(sender.sent).toHaveLength(0);
+    expect(store.rows).toHaveLength(1);
+    expect(store.rows[0]).toMatchObject({ status: "claimed", id: 1 });
+    expect(store.rows[0]!.items).toHaveLength(2);
+
+    release();
+    expect((await first).status).toBe("sent");
+    expect(sender.sent).toHaveLength(1);
+    expect(store.rows[0]!.status).toBe("sent");
+  });
+
+  it("takes over a claim whose lease expired", async () => {
+    const { store, sender, options } = setup([1]);
+    // A crashed run left a claim behind.
+    await store.claimDigest({ kind: "morning", date: "2026-11-27", items: [] }, now);
+    const later = new Date(now.getTime() + LEASE_MS + 1000);
+    const result = await runDigest(options({ now: () => later }));
+    expect(result.status).toBe("sent");
+    expect(sender.sent).toHaveLength(1);
+    expect(store.rows).toHaveLength(1);
+    expect(store.rows[0]!.status).toBe("sent");
+  });
+
+  it("does not take over a claim inside the lease", async () => {
+    const { store, sender, options } = setup([1]);
+    await store.claimDigest({ kind: "morning", date: "2026-11-27", items: [] }, now);
+    const soon = new Date(now.getTime() + LEASE_MS - 1000);
+    expect((await runDigest(options({ now: () => soon }))).status).toBe("in_progress");
+    expect(sender.sent).toHaveLength(0);
+    expect(store.rows[0]!.status).toBe("claimed");
+  });
+
+  it("marks the digest failed after a failed send", async () => {
+    const { store, sender, options } = setup([1]);
+    sender.failNext = 1;
+    await expect(runDigest(options())).rejects.toThrow("Telegram send failed");
+    expect(store.rows[0]!.status).toBe("failed");
+  });
+
+  it("raises an error when markSent runs with a lost claim", async () => {
+    const { store } = setup([1]);
+    const stale = (await store.claimDigest(
+      { kind: "morning", date: "2026-11-27", items: [] },
+      now,
+    ))!;
+    await store.releaseClaim(stale);
+    await store.claimDigest(
+      { kind: "morning", date: "2026-11-27", items: [] },
+      new Date(now.getTime() + 1000),
+    );
+    await expect(store.markSent(stale, [1], now)).rejects.toThrow("claim lost");
   });
 
   it("sends a short message on a quiet day and never pads", async () => {
