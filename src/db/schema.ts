@@ -4,6 +4,7 @@ import {
   bigint,
   boolean,
   check,
+  date,
   index,
   integer,
   jsonb,
@@ -14,6 +15,7 @@ import {
   text,
   timestamp,
   unique,
+  uuid,
   vector,
 } from "drizzle-orm/pg-core";
 
@@ -176,14 +178,28 @@ export const digests = pgTable(
   {
     id: id(),
     userId: userId(),
+    /** The slot: "morning" or "evening". */
     kind: text("kind").notNull(),
     language: text("language").notNull(),
+    /** Local date of the slot in the owner's time zone ("YYYY-MM-DD"). Null for old rows. */
+    digestDate: date("digest_date", { mode: "string" }),
     scheduledFor: timestamp("scheduled_for", { withTimezone: true }),
     sentAt: timestamp("sent_at", { withTimezone: true }),
+    /** "claimed": a run owns the slot and may be sending. "sent". "failed": the send failed. */
+    status: text("status").notNull().default("sent"),
+    /** When the current claim started. The lease counts from here. */
+    claimedAt: timestamp("claimed_at", { withTimezone: true }),
+    /** Identifies the run that owns the claim. */
+    claimToken: uuid("claim_token"),
     telegramMessageIds: jsonb("telegram_message_ids").$type<number[]>(),
     createdAt: createdAt(),
   },
-  (t) => [index("digests_user_sent_idx").on(t.userId, t.sentAt)],
+  (t) => [
+    index("digests_user_sent_idx").on(t.userId, t.sentAt),
+    // One digest per user, slot and day. Rows without a date are not limited.
+    unique("digests_user_slot_date_uq").on(t.userId, t.kind, t.digestDate),
+    check("digests_status_check", sql`${t.status} in ('claimed', 'sent', 'failed')`),
+  ],
 );
 
 export const digestItems = pgTable(

@@ -114,6 +114,30 @@ GROUP BY s.slug
 ORDER BY items DESC;
 ```
 
+## Process stories and send a digest by hand
+
+Run these after `pnpm collect`. Both commands read `.env`, run once and exit.
+
+```bash
+pnpm process
+pnpm digest --slot morning --dry-run
+pnpm digest --slot morning
+```
+
+`pnpm process` runs dedup, the pre-filter and scoring for stories that are not scored yet. It logs the counts of every stage and prints one summary line, for example: `Process: embedded 12, clustered 12 (9 new stories), pre-filter passed 4 / dropped 5, scored 4, invalid 0, failed 0`. A missing `EMBEDDINGS_API_KEY` or `ANTHROPIC_API_KEY` is logged and the stage degrades or is skipped. It is not a crash. Exit code 1 means a database error.
+
+`pnpm digest --slot morning|evening [--dry-run]` ranks the stories, composes the text, formats it and sends it to `TELEGRAM_OWNER_ID`. The language comes from the owner's `user_settings`.
+
+- `--dry-run` prints the messages to stdout. It sends nothing and writes nothing, so no story counts as sent.
+- A real run records the digest (user, local date, slot, message ids, story ids). A story counts as sent only after Telegram accepted all messages of the digest.
+- The same slot on the same day is sent once. A second run prints `already_sent` and sends nothing.
+- If the send fails, the command exits with code 1. The digest stays unsent. Run the same command again to retry. If a digest has several messages and a later one fails, the retry sends all of them again.
+- If no story passes the ranking, the bot sends a short "nothing important" message.
+- The footer counts the items of the last 24 hours that are not in the digest.
+- Both commands exit with code 1 on failure and log one error line. Logs never contain secrets.
+
+The command prints one summary line: `Digest morning: sent, 6 stories, 1 messages`.
+
 ## Working on this repo
 
 Development runs on GitHub. Each task is an issue. To give an issue to the agent, add the label **`claude`**. Claude Code then runs in GitHub Actions, implements the issue and opens a pull request. To ask for changes on a pull request, write a comment that starts with `@claude`. Details: [`docs/SPEC.md` §11](docs/SPEC.md#11-development-workflow).
