@@ -33,6 +33,7 @@ const envSchema = z.object({
   SCORING_DAILY_CAP: z.coerce.number().int().min(0).default(100),
   SCORING_MAX_CHARS: z.coerce.number().int().min(100).max(20_000).default(1500),
   SCORING_MAX_OUTPUT_TOKENS: z.coerce.number().int().min(100).max(4000).default(500),
+  COMPOSE_MAX_OUTPUT_TOKENS: z.coerce.number().int().min(200).max(4000).default(800),
   EMBEDDINGS_API_KEY: z.string().optional(),
   EMBEDDINGS_API_URL: z.string().url().default("https://api.voyageai.com/v1/embeddings"),
   EMBEDDINGS_MODEL: z.string().min(1).default("voyage-3.5"),

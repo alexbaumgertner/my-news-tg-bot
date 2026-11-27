@@ -60,6 +60,7 @@ interface Labels {
   evening: string;
   why: string;
   quiet: (count: number) => string;
+  nothing: string;
   count: (count: number) => string;
   filtered: (items: number, sources: number) => string;
   locale: string;
@@ -73,6 +74,7 @@ const LABELS: Record<DigestLanguage, Labels> = {
     evening: "🌙 Evening",
     why: "Why it matters to you",
     quiet: (n) => `Quiet day, ${n} ${n === 1 ? "item" : "items"}`,
+    nothing: "Nothing important today.",
     count: (n) => `${n} ${n === 1 ? "item" : "items"}`,
     filtered: (i, s) => `Filtered out: ${i} items from ${s} sources.`,
     locale: "en-GB",
@@ -82,6 +84,7 @@ const LABELS: Record<DigestLanguage, Labels> = {
     evening: "🌙 Вечер",
     why: "Почему это важно для вас",
     quiet: (n) => `Тихий день, ${ruNews(n)}`,
+    nothing: "Ничего важного сегодня.",
     count: (n) => ruNews(n),
     filtered: (i, s) => `Отфильтровано: ${i} материалов из ${s} источников.`,
     locale: "ru-RU",
@@ -159,7 +162,6 @@ function packTopic(header: string, items: string[], limit: number): string[] {
  */
 export function formatDigest(input: DigestInput): FormattedDigest {
   const limit = input.limit ?? TELEGRAM_LIMIT;
-  const labels = LABELS[input.language];
 
   const valid: { item: ComposedItem; url: string }[] = [];
   for (const item of input.items) {
@@ -196,21 +198,50 @@ export function formatDigest(input: DigestInput): FormattedDigest {
     blocks.push(...packTopic(header, texts, limit));
   }
 
-  const date = new Intl.DateTimeFormat(labels.locale, {
-    day: "numeric",
-    month: "long",
-    timeZone: input.timeZone,
-  }).format(input.now);
-  const title = input.kind === "morning" ? labels.morning : labels.evening;
-  const summary = shown.length <= 2 ? labels.quiet(shown.length) : labels.count(shown.length);
-  const head = `${title}, ${date} · ${summary}`;
-  const footer = input.filteredOut
-    ? labels.filtered(input.filteredOut.items, input.filteredOut.sources)
-    : null;
+  const head = digestHead(input, shown.length);
+  const footer = filteredFooter(input);
 
   // Pack the head, the blocks and the footer into messages.
   const units = [head, ...blocks];
   if (footer) units.push(footer);
+  return { messages: packUnits(units, limit), shown, droppedInvalidUrl };
+}
+
+type HeadInput = Omit<DigestInput, "items">;
+
+/**
+ * The message for a day on which nothing passed the ranking. It is short and never padded.
+ * The footer shows the filtered-out counts when they are given.
+ */
+export function formatEmptyDigest(input: HeadInput): string {
+  const labels = LABELS[input.language];
+  const title = input.kind === "morning" ? labels.morning : labels.evening;
+  const footer = filteredFooter(input);
+  return [`${title}, ${headDate(input)}`, labels.nothing, ...(footer ? [footer] : [])].join("\n\n");
+}
+
+function headDate(input: HeadInput): string {
+  return new Intl.DateTimeFormat(LABELS[input.language].locale, {
+    day: "numeric",
+    month: "long",
+    timeZone: input.timeZone,
+  }).format(input.now);
+}
+
+function digestHead(input: HeadInput, count: number): string {
+  const labels = LABELS[input.language];
+  const title = input.kind === "morning" ? labels.morning : labels.evening;
+  const summary = count <= 2 ? labels.quiet(count) : labels.count(count);
+  return `${title}, ${headDate(input)} · ${summary}`;
+}
+
+function filteredFooter(input: HeadInput): string | null {
+  return input.filteredOut
+    ? LABELS[input.language].filtered(input.filteredOut.items, input.filteredOut.sources)
+    : null;
+}
+
+function packUnits(units: string[], limit: number): string[] {
   const messages: string[] = [];
   let current = "";
   for (const unit of units) {
@@ -223,5 +254,5 @@ export function formatDigest(input: DigestInput): FormattedDigest {
     }
   }
   if (current) messages.push(current);
-  return { messages, shown, droppedInvalidUrl };
+  return messages;
 }

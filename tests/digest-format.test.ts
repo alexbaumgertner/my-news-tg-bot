@@ -1,6 +1,12 @@
 import { pino } from "pino";
 import { describe, expect, it } from "vitest";
-import { formatDigest, escapeHtml, safeUrl, TELEGRAM_LIMIT } from "../src/digest/format.js";
+import {
+  formatDigest,
+  formatEmptyDigest,
+  escapeHtml,
+  safeUrl,
+  TELEGRAM_LIMIT,
+} from "../src/digest/format.js";
 import { composeItems, type ComposedItem } from "../src/llm/compose.js";
 import {
   buildComposePrompt,
@@ -382,5 +388,20 @@ describe("composeItems", () => {
     expect(buildComposePrompt(profile, "other").version).not.toBe(
       buildComposePrompt(profile).version,
     );
+  });
+});
+
+describe("formatEmptyDigest", () => {
+  it("renders a short message with the footer", () => {
+    const text = formatEmptyDigest({ ...base, language: "en" });
+    expect(text).toContain("Nothing important today.");
+    expect(text).toContain("Filtered out: 214 items from 38 sources.");
+    expect(text).not.toContain("1.");
+  });
+
+  it("skips the footer when counts are not given", () => {
+    const text = formatEmptyDigest({ ...base, language: "ru", filteredOut: undefined });
+    expect(text).toContain("Ничего важного сегодня.");
+    expect(text).not.toContain("Отфильтровано");
   });
 });
