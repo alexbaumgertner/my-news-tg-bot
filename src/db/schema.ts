@@ -249,9 +249,14 @@ export const llmUsage = pgTable(
     cacheReadTokens: integer("cache_read_tokens").notNull().default(0),
     cacheWriteTokens: integer("cache_write_tokens").notNull().default(0),
     costUsd: numeric("cost_usd", { precision: 12, scale: 6 }).notNull().default("0"),
+    /** Set for a batch answer: "<provider batch id>:<custom id>". It makes a replay safe. */
+    batchEntryKey: text("batch_entry_key"),
     createdAt: createdAt(),
   },
-  (t) => [index("llm_usage_user_created_idx").on(t.userId, t.createdAt)],
+  (t) => [
+    index("llm_usage_user_created_idx").on(t.userId, t.createdAt),
+    unique("llm_usage_user_batch_entry_uq").on(t.userId, t.batchEntryKey),
+  ],
 );
 
 /** Stub for v1: words shown in the English block. */

@@ -50,7 +50,11 @@ export interface ScoringStore {
   ): Promise<void>;
   /** Remember that the output for this item was invalid, so scoring does not repeat it. */
   markFailed(candidate: Pick<Candidate, "storyId" | "itemId">): Promise<void>;
-  recordUsage(model: string, usage: LlmUsage, costUsd: number): Promise<void>;
+  /**
+   * Record the usage of one answer. With an `entryKey`, a second call with the same key
+   * records nothing and returns false.
+   */
+  recordUsage(model: string, usage: LlmUsage, costUsd: number, entryKey?: string): Promise<boolean>;
   saveBatch(batch: { providerBatchId: string; entries: BatchEntry[] } & ScoreMeta): Promise<void>;
   endBatch(id: number): Promise<void>;
 }
@@ -155,17 +159,23 @@ export function createDbScoringStore(db: Db, userId: number): ScoringStore {
         .where(and(eq(stories.id, candidate.storyId), eq(stories.userId, userId)));
     },
 
-    async recordUsage(model, usage, costUsd) {
-      await db.insert(llmUsage).values({
-        userId,
-        purpose: "score",
-        model,
-        inputTokens: usage.inputTokens,
-        outputTokens: usage.outputTokens,
-        cacheReadTokens: usage.cacheReadTokens,
-        cacheWriteTokens: usage.cacheWriteTokens,
-        costUsd: costUsd.toFixed(6),
-      });
+    async recordUsage(model, usage, costUsd, entryKey) {
+      const rows = await db
+        .insert(llmUsage)
+        .values({
+          userId,
+          purpose: "score",
+          model,
+          inputTokens: usage.inputTokens,
+          outputTokens: usage.outputTokens,
+          cacheReadTokens: usage.cacheReadTokens,
+          cacheWriteTokens: usage.cacheWriteTokens,
+          costUsd: costUsd.toFixed(6),
+          batchEntryKey: entryKey ?? null,
+        })
+        .onConflictDoNothing()
+        .returning({ id: llmUsage.id });
+      return rows.length > 0;
     },
 
     async saveBatch(batch) {

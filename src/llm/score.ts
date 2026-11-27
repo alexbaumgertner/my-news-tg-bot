@@ -91,11 +91,15 @@ export async function runScoring(options: ScoringOptions): Promise<ScoringReport
     response: LlmResponse,
     batch: boolean,
     scoreMeta: { model: string; promptVersion: string },
+    entryKey?: string,
   ): Promise<void> => {
+    // With an entry key, a replayed answer does not add a second usage row.
+    // The score write below is an upsert, so it is safe to repeat.
     await store.recordUsage(
       scoreMeta.model,
       response.usage,
       costUsd(response.usage, options.pricing, batch),
+      entryKey,
     );
     const parsed = parseScore(response.text, topicIds);
     if (!parsed.ok) {
@@ -130,10 +134,13 @@ export async function runScoring(options: ScoringOptions): Promise<ScoringReport
           logger.warn({ ...entry, error: result.error }, "Batch entry failed");
           continue;
         }
-        await handleAnswer(entry, result.response, true, {
-          model: batch.model,
-          promptVersion: batch.promptVersion,
-        });
+        await handleAnswer(
+          entry,
+          result.response,
+          true,
+          { model: batch.model, promptVersion: batch.promptVersion },
+          `${batch.providerBatchId}:${entry.customId}`,
+        );
       }
       await store.endBatch(batch.id);
       report.batchesCollected++;

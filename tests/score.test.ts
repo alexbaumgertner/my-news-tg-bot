@@ -65,7 +65,7 @@ const logger = pino({ level: "silent" });
 class MemoryStore implements ScoringStore {
   scores = new Map<number, { itemId: number; relevance: number }>();
   failed = new Map<number, number>();
-  usage: { cost: number; at: Date }[] = [];
+  usage: { cost: number; at: Date; key?: string }[] = [];
   batches: (PendingBatch & { status: "pending" | "ended" })[] = [];
 
   constructor(
@@ -94,8 +94,10 @@ class MemoryStore implements ScoringStore {
   async markFailed(candidate: Pick<Candidate, "storyId" | "itemId">) {
     this.failed.set(candidate.storyId, candidate.itemId);
   }
-  async recordUsage(_model: string, _usage: LlmUsage, cost: number) {
-    this.usage.push({ cost, at: this.now });
+  async recordUsage(_model: string, _usage: LlmUsage, cost: number, key?: string) {
+    if (key && this.usage.some((u) => u.key === key)) return false;
+    this.usage.push({ cost, at: this.now, key });
+    return true;
   }
   async saveBatch(batch: { providerBatchId: string; entries: BatchEntry[] } & ScoreMeta) {
     this.batches.push({ id: this.batches.length + 1, status: "pending", ...batch });
@@ -186,6 +188,24 @@ describe("pricing", () => {
   it("computes the cost and halves it for a batch", () => {
     expect(costUsd(usage, pricing, false)).toBeCloseTo(7.35);
     expect(costUsd(usage, pricing, true)).toBeCloseTo(3.675);
+  });
+
+  it("reserves the uncached price for the system block", () => {
+    const sizes = { systemChars: 6000, userChars: 2000, maxOutputTokens: 500 };
+    const estimate = estimateCostUsd(pricing, sizes, false);
+    // The cache-write price is the highest. 2400 system tokens are counted at it.
+    const worst = costUsd(
+      { inputTokens: 800, outputTokens: 500, cacheReadTokens: 0, cacheWriteTokens: 2400 },
+      pricing,
+      false,
+    );
+    expect(estimate).toBeCloseTo(worst);
+    const hit = costUsd(
+      { inputTokens: 800, outputTokens: 500, cacheReadTokens: 2400, cacheWriteTokens: 0 },
+      pricing,
+      false,
+    );
+    expect(estimate).toBeGreaterThan(hit);
   });
 
   it("estimates more than it costs for a normal story", () => {
@@ -318,6 +338,49 @@ describe("runScoring (batch)", () => {
     expect(second).toMatchObject({ batchesCollected: 1, scored: 3, submitted: 0 });
     // Batch usage costs half of the normal price.
     expect(store.usage[0]!.cost).toBeCloseTo(0.00075);
+  });
+
+  it("refuses a request when only the cache-hit estimate would fit", async () => {
+    const prompt = { system: "S".repeat(20_000), version: "score-test" };
+    const sizes = { systemChars: 20_000, userChars: 2000, maxOutputTokens: 500 };
+    const hit = costUsd(
+      { inputTokens: 800, outputTokens: 500, cacheReadTokens: 8000, cacheWriteTokens: 0 },
+      pricing,
+      false,
+    );
+    const worst = estimateCostUsd(pricing, sizes, false);
+    expect(worst).toBeGreaterThan(hit);
+    const limit = (hit + worst) / 2;
+    for (const mode of ["sync", "batch"] as const) {
+      const store = new MemoryStore(stories(1), NOW);
+      const provider = new FakeProvider(() => validJson);
+      const factor = mode === "batch" ? pricing.batchFactor : 1;
+      const report = await runScoring(
+        options(store, provider, { mode, prompt, dailyLimitUsd: limit * factor }),
+      );
+      expect(report.stopReason).toBe("daily_budget");
+      expect(provider.requests).toHaveLength(0);
+      expect(provider.batches.size).toBe(0);
+    }
+  });
+
+  it("records the usage of a replayed batch only once", async () => {
+    const store = new MemoryStore(stories(3), NOW);
+    const provider = new FakeProvider(() => validJson);
+    await runScoring(options(store, provider, { mode: "batch" }));
+    // Simulate a stop before the batch was marked ended: the first read is replayed.
+    const originalEnd = store.endBatch.bind(store);
+    store.endBatch = async () => {
+      throw new Error("database down");
+    };
+    await runScoring(options(store, provider, { mode: "batch" }));
+    expect(store.usage).toHaveLength(3);
+    const spent = await store.spentSince(new Date(0));
+    store.endBatch = originalEnd;
+    await runScoring(options(store, provider, { mode: "batch", dailyCap: 3 }));
+    expect(store.usage).toHaveLength(3);
+    expect(await store.spentSince(new Date(0))).toBeCloseTo(spent);
+    expect(store.scores.size).toBe(3);
   });
 
   it("counts the stories of a pending batch against the daily cap", async () => {

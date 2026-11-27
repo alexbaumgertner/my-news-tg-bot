@@ -121,6 +121,14 @@ describe.skipIf(!url)("scoring on the database", () => {
       expect(rows.map((r) => r.storyId)).toEqual([ids[0]]);
       expect(await db.$count(llmUsage)).toBe(2);
 
+      // The same batch entry key records its usage only once.
+      const store = createDbScoringStore(db, 1);
+      const usage = { inputTokens: 1, outputTokens: 1, cacheReadTokens: 0, cacheWriteTokens: 0 };
+      expect(await store.recordUsage("m", usage, 0.001, "b1:s1-i1")).toBe(true);
+      expect(await store.recordUsage("m", usage, 0.001, "b1:s1-i1")).toBe(false);
+      expect(await db.$count(llmUsage)).toBe(3);
+      await db.delete(llmUsage).where(eq(llmUsage.batchEntryKey, "b1:s1-i1"));
+
       // A second run sends nothing: one story has a score, the other has invalid output.
       await run();
       expect(provider.requests).toHaveLength(2);

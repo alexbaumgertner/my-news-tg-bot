@@ -42,21 +42,24 @@ const CHARS_PER_TOKEN = 2.5;
 
 /**
  * Upper estimate of the cost of one request, before it is sent.
- * The system text counts at the cache-read price. The real cost is recorded after the call.
+ * The system text counts at the highest of the input, cache-write and cache-read prices,
+ * because the cache may be cold or expired. The real cost is recorded after the call.
  */
 export function estimateCostUsd(
   pricing: Pricing,
   sizes: { systemChars: number; userChars: number; maxOutputTokens: number },
   batch: boolean,
 ): number {
-  return costUsd(
-    {
-      inputTokens: Math.ceil(sizes.userChars / CHARS_PER_TOKEN),
-      outputTokens: sizes.maxOutputTokens,
-      cacheReadTokens: Math.ceil(sizes.systemChars / CHARS_PER_TOKEN),
-      cacheWriteTokens: 0,
-    },
-    pricing,
-    batch,
+  const systemTokens = Math.ceil(sizes.systemChars / CHARS_PER_TOKEN);
+  const systemPrice = Math.max(
+    pricing.inputPerMTok,
+    pricing.cacheWritePerMTok,
+    pricing.cacheReadPerMTok,
   );
+  const total =
+    (Math.ceil(sizes.userChars / CHARS_PER_TOKEN) * pricing.inputPerMTok +
+      sizes.maxOutputTokens * pricing.outputPerMTok +
+      systemTokens * systemPrice) /
+    1_000_000;
+  return batch ? total * pricing.batchFactor : total;
 }
