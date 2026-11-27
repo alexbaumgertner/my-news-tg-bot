@@ -88,6 +88,19 @@ describe("helpers", () => {
     expect(result.text).toContain("<script>alert(1)</script>");
   });
 
+  it("keeps paragraph, list item and line break boundaries", () => {
+    const filler = "This sentence adds enough text so that Readability keeps the article. ".repeat(
+      8,
+    );
+    const body = `<html><body><article><h1>Title</h1><p>First paragraph.</p><p>Second paragraph.</p><ul><li>Item one</li><li>Item two</li></ul><p>Line A<br>Line B</p><table><tr><td>Cell1</td></tr><tr><td>Cell2</td></tr></table><p>${filler}</p></article></body></html>`;
+    const text = extractMainText(body, "https://example.com/a", 5_000).text!;
+    expect(text).toContain("First paragraph.\nSecond paragraph.");
+    expect(text).toContain("Item one\nItem two");
+    expect(text).toContain("Line A\nLine B");
+    expect(text).toContain("Cell1\nCell2");
+    expect(text).not.toContain("paragraph.Second");
+  });
+
   it("extracts main text and canonical link", () => {
     const result = extractMainText(html, "https://example.com/a", 300);
     expect(result.text).toContain("agentic coding");

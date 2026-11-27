@@ -129,9 +129,38 @@ export function extractMainText(
   const article = new Readability(
     document as unknown as ConstructorParameters<typeof Readability>[0],
   ).parse();
-  // textContent is plain text already. Do not strip markup again.
-  const text = article?.textContent ? normalizeWhitespace(article.textContent, maxChars) : "";
+  const text = article?.content ? blocksToText(article.content, maxChars) : "";
   return { text: text || null, canonicalLink };
+}
+
+const BLOCK_SELECTOR =
+  "p, div, li, ul, ol, h1, h2, h3, h4, h5, h6, tr, blockquote, pre, section, article, " +
+  "header, footer, figure, figcaption, table, dl, dt, dd, hr";
+
+interface DomNode {
+  parentNode: { insertBefore(node: unknown, ref: unknown): unknown } | null;
+  nextSibling: unknown;
+  remove(): void;
+}
+
+/**
+ * Convert the Readability HTML to plain text. Put a newline at each block and line break.
+ * `textContent` joins adjacent blocks without a separator, so we add the newlines first.
+ * The HTML comes from `article.content`, which escapes literal markup in the text.
+ * The text of the parsed DOM is plain text. Do not strip markup again.
+ */
+function blocksToText(content: string, maxChars: number): string {
+  const { document } = parseHTML(`<!doctype html><html><body>${content}</body></html>`);
+  const newline = () => document.createTextNode("\n");
+  for (const node of Array.from(document.querySelectorAll("br") as Iterable<DomNode>)) {
+    node.parentNode?.insertBefore(newline(), node);
+    node.remove();
+  }
+  for (const node of Array.from(document.querySelectorAll(BLOCK_SELECTOR) as Iterable<DomNode>)) {
+    node.parentNode?.insertBefore(newline(), node);
+    node.parentNode?.insertBefore(newline(), node.nextSibling);
+  }
+  return normalizeWhitespace(document.body?.textContent ?? "", maxChars);
 }
 
 export class Normalizer {
