@@ -11,6 +11,7 @@
     "dev": "tsx watch src/index.ts",
     "start": "node dist/index.js",
     "collect": "tsx src/collect.ts",
+    "score": "tsx src/score.ts",
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
@@ -19,7 +20,8 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx src/db/migrate.ts",
     "golden:export": "tsx scripts/golden-export.ts",
-    "golden:build": "tsx scripts/golden-build.ts"
+    "golden:build": "tsx scripts/golden-build.ts",
+    "golden:eval": "tsx scripts/golden-eval.ts"
   },
   "dependencies": {
     "@mozilla/readability": "^0.6.0",
