@@ -83,6 +83,28 @@ class FakeStore implements DigestStore {
     return this.candidates.filter((id) => !sent.has(id)).map(ranked);
   }
 
+  /** Stories that passed the pre-filter but have no score. Set it to test the degraded digest. */
+  unscored: number[] = [];
+
+  async rankDegraded() {
+    const sent = new Set(
+      this.rows.filter((r) => r.sentAt).flatMap((r) => r.items.map((i) => i.storyId)),
+    );
+    return [...this.candidates, ...this.unscored].filter((id) => !sent.has(id)).map(ranked);
+  }
+
+  async daySummary() {
+    return {
+      sourcesOk: 40,
+      sourcesFailed: 2,
+      itemsCollected: 300,
+      storiesPassed: 20,
+      inputTokens: 1000,
+      outputTokens: 200,
+      costUsd: 0.0123,
+    };
+  }
+
   async loadComposeStories(list: RankedStory[]): Promise<ComposeStory[]> {
     return list.map((r) => ({
       storyId: r.storyId,
@@ -367,11 +389,64 @@ describe("runDigest", () => {
     expect(sender.sent).toHaveLength(2);
   });
 
-  it("fails and sends nothing when stories are ranked but none can be composed", async () => {
+  it("sends a degraded digest when the API key is missing", async () => {
+    const { store, sender, options } = setup([1, 2], null);
+    const result = await runDigest(options());
+    expect(result).toMatchObject({ status: "sent", stories: 2, degraded: true });
+    const html = sender.sent[0]!.html;
+    expect(html).toContain("Degraded digest");
+    expect(html).toContain('<a href="https://example.com/1">Story 1</a>');
+    expect(html).not.toContain("Why it matters");
+    // The stories count as sent only after Telegram accepted the message.
+    expect(store.rows[0]!.status).toBe("sent");
+    expect(store.rows[0]!.items.map((i) => i.storyId)).toEqual([1, 2]);
+    expect((await runDigest(options())).status).toBe("already_sent");
+  });
+
+  it("sends a degraded digest when every LLM call fails", async () => {
+    const provider = new FakeProvider(() => new Error("LLM outage"));
+    const { sender, options } = setup([1], provider);
+    const result = await runDigest(options());
+    expect(result).toMatchObject({ status: "sent", stories: 1, degraded: true });
+    expect(sender.sent[0]!.html).toContain("Story 1");
+  });
+
+  it("sends a degraded digest when the budget is exhausted", async () => {
+    const { sender, options, provider } = setup([1]);
+    const result = await runDigest(options({ dailyLimitUsd: 0 }));
+    expect(result).toMatchObject({ status: "sent", degraded: true });
+    expect(provider!.requests).toHaveLength(0);
+    expect(sender.sent).toHaveLength(1);
+  });
+
+  it("lists unscored stories when nothing is scored", async () => {
+    const { store, sender, options } = setup([], null);
+    store.unscored = [5, 6];
+    const result = await runDigest(options());
+    expect(result).toMatchObject({ status: "sent", stories: 2, degraded: true });
+    expect(sender.sent[0]!.html).toContain("Story 5");
+  });
+
+  it("keeps a degraded digest unsent after a failed send", async () => {
     const { store, sender, options } = setup([1], null);
-    await expect(runDigest(options())).rejects.toThrow("No story could be composed");
-    expect(sender.sent).toHaveLength(0);
-    expect(store.rows).toHaveLength(0);
+    sender.failNext = 1;
+    await expect(runDigest(options())).rejects.toThrow("Telegram send failed");
+    expect(store.rows[0]!.status).toBe("failed");
+    expect((await runDigest(options())).status).toBe("sent");
+  });
+
+  it("is not degraded when composing works", async () => {
+    const { sender, options } = setup([1]);
+    expect((await runDigest(options())).degraded).toBe(false);
+    expect(sender.sent[0]!.html).not.toContain("Degraded digest");
+  });
+
+  it("still sends the digest when the daily summary fails", async () => {
+    const { store, options } = setup([1]);
+    store.daySummary = async () => {
+      throw new Error("db down");
+    };
+    expect((await runDigest(options())).status).toBe("sent");
   });
 
   it("sends the stories that were composed and keeps the others unsent", async () => {

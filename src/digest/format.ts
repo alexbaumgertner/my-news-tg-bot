@@ -63,6 +63,7 @@ interface Labels {
   nothing: string;
   count: (count: number) => string;
   filtered: (items: number, sources: number) => string;
+  degraded: string;
   locale: string;
 }
 
@@ -77,6 +78,8 @@ const LABELS: Record<DigestLanguage, Labels> = {
     nothing: "Nothing important today.",
     count: (n) => `${n} ${n === 1 ? "item" : "items"}`,
     filtered: (i, s) => `Filtered out: ${i} items from ${s} sources.`,
+    degraded:
+      "⚠️ Degraded digest: the language model is unavailable or over budget today. Headlines and links only, with no summaries.",
     locale: "en-GB",
   },
   ru: {
@@ -87,6 +90,8 @@ const LABELS: Record<DigestLanguage, Labels> = {
     nothing: "Ничего важного сегодня.",
     count: (n) => ruNews(n),
     filtered: (i, s) => `Отфильтровано: ${i} материалов из ${s} источников.`,
+    degraded:
+      "⚠️ Упрощённый дайджест: языковая модель сегодня недоступна или бюджет исчерпан. Только заголовки и ссылки, без пересказов.",
     locale: "ru-RU",
   },
 };
@@ -255,4 +260,76 @@ function packUnits(units: string[], limit: number): string[] {
   }
   if (current) messages.push(current);
   return messages;
+}
+
+/** A story for the degraded digest. The headline is the original title. */
+export interface DegradedStory {
+  storyId: number;
+  topic: string;
+  title: string;
+  url: string;
+  sourceName: string;
+}
+
+export interface DegradedDigestInput extends Omit<DigestInput, "items"> {
+  /** Stories in rank order. */
+  stories: DegradedStory[];
+}
+
+export interface FormattedDegradedDigest {
+  messages: string[];
+  shown: DegradedStory[];
+  droppedInvalidUrl: number;
+}
+
+const MAX_DEGRADED_TITLE_CHARS = 200;
+
+/**
+ * Format the degraded digest: a note, then the title and the link of each story, grouped by
+ * topic. It has no summaries. A story whose URL is not a valid http or https URL is dropped.
+ */
+export function formatDegradedDigest(input: DegradedDigestInput): FormattedDegradedDigest {
+  const limit = input.limit ?? TELEGRAM_LIMIT;
+  const valid: { story: DegradedStory; url: string }[] = [];
+  for (const story of input.stories) {
+    const url = safeUrl(story.url);
+    if (url) valid.push({ story, url });
+  }
+  const droppedInvalidUrl = input.stories.length - valid.length;
+  if (valid.length === 0) return { messages: [], shown: [], droppedInvalidUrl };
+
+  const order = new Map(input.profile.topics.map((t, i) => [t.id, i]));
+  const groups = new Map<string, typeof valid>();
+  for (const entry of valid) {
+    const list = groups.get(entry.story.topic) ?? [];
+    list.push(entry);
+    groups.set(entry.story.topic, list);
+  }
+  const topicIds = [...groups.keys()].sort(
+    (a, b) => (order.get(a) ?? Infinity) - (order.get(b) ?? Infinity),
+  );
+
+  const shown: DegradedStory[] = [];
+  const blocks: string[] = [];
+  let number = 0;
+  for (const topicId of topicIds) {
+    const topic = input.profile.topics.find((t) => t.id === topicId);
+    const header = `${escapeHtml(topic?.emoji ?? "📰")} <b>${escapeHtml(topic?.title ?? topicId)}</b>`;
+    const texts: string[] = [];
+    for (const { story, url } of groups.get(topicId)!) {
+      number++;
+      shown.push(story);
+      // The title comes from a remote source. Cap its length so that a message stays small.
+      const title = story.title.slice(0, MAX_DEGRADED_TITLE_CHARS);
+      texts.push(
+        `${number}. <a href="${escapeAttr(url)}">${escapeHtml(title)}</a> · ${escapeHtml(story.sourceName)}`,
+      );
+    }
+    blocks.push(...packTopic(header, texts, limit));
+  }
+
+  const units = [digestHead(input, shown.length), LABELS[input.language].degraded, ...blocks];
+  const footer = filteredFooter(input);
+  if (footer) units.push(footer);
+  return { messages: packUnits(units, limit), shown, droppedInvalidUrl };
 }

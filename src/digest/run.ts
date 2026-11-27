@@ -6,7 +6,7 @@ import type { LlmProvider } from "../llm/provider.js";
 import type { UsageStore } from "../llm/score-store.js";
 import type { DigestKind, RankedStory } from "../pipeline/rank.js";
 import type { Profile } from "../profile.js";
-import { formatDigest, formatEmptyDigest, safeUrl } from "./format.js";
+import { formatDegradedDigest, formatDigest, formatEmptyDigest, safeUrl } from "./format.js";
 
 /** Sends one Telegram HTML message and returns its message id. Tests use a fake. */
 export interface MessageSender {
@@ -22,12 +22,32 @@ export interface DigestItemRecord {
   url: string;
 }
 
+/** Counts of the last day, for the daily log line. */
+export interface DaySummary {
+  /** Active sources without a failure streak, and with one. */
+  sourcesOk: number;
+  sourcesFailed: number;
+  itemsCollected: number;
+  /** Stories that passed the pre-filter. */
+  storiesPassed: number;
+  inputTokens: number;
+  outputTokens: number;
+  costUsd: number;
+}
+
 /** Everything that a digest run reads and writes in the database. Tests may fake it. */
 export interface DigestStore {
   /** The digest of this slot and day, if any. `sentAt` is null for a digest that failed to send. */
   findDigest(kind: DigestKind, date: string): Promise<{ id: number; sentAt: Date | null } | null>;
   /** Rank the stories for this slot. Stories of sent digests are left out. */
   rank(kind: DigestKind, now: Date): Promise<RankedStory[]>;
+  /**
+   * Rank for a degraded digest: the same rules and limits, but a story needs no LLM score.
+   * Stories of sent digests are left out.
+   */
+  rankDegraded(kind: DigestKind, now: Date): Promise<RankedStory[]>;
+  /** Counts since `since`, for the daily log line. */
+  daySummary(since: Date): Promise<DaySummary>;
   loadComposeStories(ranked: RankedStory[], maxChars: number): Promise<ComposeStory[]>;
   /** Items collected since `since` that are not in the shown stories, and their sources. */
   countFilteredOut(
@@ -98,6 +118,8 @@ export interface DigestResult {
   stories: number;
   messages: number;
   digestId: number | null;
+  /** True when the digest has headlines and links only, because the LLM was not available. */
+  degraded?: boolean;
 }
 
 /** The local calendar date ("YYYY-MM-DD") of `now` in a time zone. */
@@ -112,6 +134,19 @@ export function localDate(now: Date, timeZone: string): string {
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+/** Log one line with the counts of the last day. A failure here never fails the digest. */
+async function logDaySummary(options: DigestRunOptions, since: Date): Promise<void> {
+  try {
+    const day = await options.store.daySummary(since);
+    options.logger.info(
+      { kind: options.kind, ...day, costUsd: Number(day.costUsd.toFixed(4)) },
+      `Daily summary: sources ok ${day.sourcesOk}, failed ${day.sourcesFailed}; items collected ${day.itemsCollected}; stories passed ${day.storiesPassed}; tokens in ${day.inputTokens}, out ${day.outputTokens}; cost $${day.costUsd.toFixed(4)}`,
+    );
+  } catch (error) {
+    options.logger.warn({ error: errorMessage(error) }, "Could not build the daily summary");
+  }
 }
 
 /**
@@ -139,15 +174,50 @@ export async function runDigest(options: DigestRunOptions): Promise<DigestResult
   const ranked = await store.rank(kind, now);
   logger.info({ kind, ranked: ranked.length }, "Ranking finished");
 
-  let messages: string[];
+  let messages: string[] = [];
   let records: DigestItemRecord[] = [];
+  let degraded = false;
   const since = new Date(now.getTime() - options.windowHours * 3_600_000);
   const base = { kind, language, profile: options.profile, now, timeZone: options.timeZone };
 
+  /** Headlines and links of the given stories. No LLM call. */
+  const buildDegraded = async (list: RankedStory[]) => {
+    const stories = await store.loadComposeStories(list, 0);
+    const probe = formatDegradedDigest({ ...base, stories });
+    const filteredOut = await store.countFilteredOut(
+      since,
+      probe.shown.map((story) => story.storyId),
+    );
+    return formatDegradedDigest({ ...base, stories, filteredOut });
+  };
+  const useDegraded = (formatted: Awaited<ReturnType<typeof buildDegraded>>) => {
+    degraded = true;
+    messages = formatted.messages;
+    records = formatted.shown.map((story) => ({
+      storyId: story.storyId,
+      headline: story.title,
+      summary: "",
+      whyMe: "",
+      url: story.url,
+    }));
+  };
+
   if (ranked.length === 0) {
-    // A quiet day. Say so and never pad.
-    const filteredOut = await store.countFilteredOut(since, []);
-    messages = [formatEmptyDigest({ ...base, filteredOut })];
+    // Nothing is scored. Stories that passed the pre-filter can still wait for a score,
+    // because the LLM was unavailable or over budget. Send them as a degraded digest.
+    const fallback = await store.rankDegraded(kind, now);
+    const formatted = fallback.length > 0 ? await buildDegraded(fallback) : null;
+    if (formatted && formatted.shown.length > 0) {
+      logger.warn(
+        { stories: formatted.shown.length },
+        "No scored story. Sending a degraded digest.",
+      );
+      useDegraded(formatted);
+    } else {
+      // A quiet day. Say so and never pad.
+      const filteredOut = await store.countFilteredOut(since, []);
+      messages = [formatEmptyDigest({ ...base, filteredOut })];
+    }
   } else {
     const stories = await store.loadComposeStories(ranked, options.maxChars);
     const report = await composeItems(stories, {
@@ -175,27 +245,36 @@ export async function runDigest(options: DigestRunOptions): Promise<DigestResult
       },
       "Composing finished",
     );
-    // Without a composed item the digest is not quiet: it is broken. Fail, do not send "nothing".
-    // The degraded digest is a separate issue (#22).
     const usable: ComposedItem[] = report.items.filter((item) => safeUrl(item.url) !== null);
     if (usable.length === 0) {
-      throw new Error(
-        `No story could be composed (${ranked.length} ranked, stop reason: ${report.stopReason ?? "none"})`,
+      // The LLM gave nothing: no key, over budget, or every call failed. Do not send "nothing".
+      // Send the ranked stories as headlines and links.
+      logger.warn(
+        { ranked: ranked.length, stopReason: report.stopReason },
+        "No story could be composed. Sending a degraded digest.",
       );
+      const formatted = await buildDegraded(ranked);
+      if (formatted.shown.length === 0) {
+        throw new Error(
+          `No story could be composed or listed (${ranked.length} ranked, stop reason: ${report.stopReason ?? "none"})`,
+        );
+      }
+      useDegraded(formatted);
+    } else {
+      const filteredOut = await store.countFilteredOut(
+        since,
+        usable.map((item) => item.storyId),
+      );
+      const formatted = formatDigest({ ...base, items: usable, filteredOut });
+      messages = formatted.messages;
+      records = formatted.shown.map((item) => ({
+        storyId: item.storyId,
+        headline: item.headline,
+        summary: item.summary,
+        whyMe: item.whyMe,
+        url: item.url,
+      }));
     }
-    const filteredOut = await store.countFilteredOut(
-      since,
-      usable.map((item) => item.storyId),
-    );
-    const formatted = formatDigest({ ...base, items: usable, filteredOut });
-    messages = formatted.messages;
-    records = formatted.shown.map((item) => ({
-      storyId: item.storyId,
-      headline: item.headline,
-      summary: item.summary,
-      whyMe: item.whyMe,
-      url: item.url,
-    }));
   }
 
   if (dryRun) {
@@ -211,6 +290,7 @@ export async function runDigest(options: DigestRunOptions): Promise<DigestResult
       stories: records.length,
       messages: messages.length,
       digestId: null,
+      degraded,
     };
   }
 
@@ -249,8 +329,15 @@ export async function runDigest(options: DigestRunOptions): Promise<DigestResult
   }
   await store.markSent(claim, messageIds, new Date());
   logger.info(
-    { kind, date, digestId, stories: records.length, messages: messageIds.length },
+    { kind, date, digestId, stories: records.length, messages: messageIds.length, degraded },
     "Digest sent",
   );
-  return { status: "sent", stories: records.length, messages: messages.length, digestId };
+  await logDaySummary(options, since);
+  return {
+    status: "sent",
+    stories: records.length,
+    messages: messages.length,
+    digestId,
+    degraded,
+  };
 }

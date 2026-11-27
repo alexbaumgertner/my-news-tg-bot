@@ -2,6 +2,7 @@ import { parseArgs } from "node:util";
 import { ConfigError, loadConfig } from "./config.js";
 import { createDb } from "./db/client.js";
 import { getSettings } from "./bot/settings.js";
+import { withRetry } from "./digest/retry.js";
 import { createGrammySender } from "./digest/sender.js";
 import { runDigest } from "./digest/run.js";
 import { createDbDigestStore } from "./digest/store.js";
@@ -49,7 +50,7 @@ async function main(): Promise<number> {
         profile,
         windowHours: WINDOW_HOURS,
       }),
-      sender: createGrammySender(env.TELEGRAM_BOT_TOKEN),
+      sender: withRetry(createGrammySender(env.TELEGRAM_BOT_TOKEN), logger),
       usageStore: createDbScoringStore(db, env.TELEGRAM_OWNER_ID),
       provider: env.ANTHROPIC_API_KEY
         ? new AnthropicProvider({ apiKey: env.ANTHROPIC_API_KEY })
@@ -71,7 +72,7 @@ async function main(): Promise<number> {
       dailyLimitUsd: env.LLM_DAILY_LIMIT_USD,
       monthlyLimitUsd: env.LLM_MONTHLY_LIMIT_USD,
     });
-    const summary = `Digest ${kind}: ${result.status}, ${result.stories} stories, ${result.messages} messages`;
+    const summary = `Digest ${kind}: ${result.status}, ${result.stories} stories, ${result.messages} messages${result.degraded ? " (degraded)" : ""}`;
     logger.info(result, "Digest run finished");
     console.log(summary);
     return 0;

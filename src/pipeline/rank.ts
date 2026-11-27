@@ -1,4 +1,4 @@
-import { and, desc, eq, gte, isNotNull } from "drizzle-orm";
+import { and, desc, eq, gte, isNotNull, sql } from "drizzle-orm";
 import type { Db } from "../db/client.js";
 import { digestItems, digests, items, scores, sources, stories } from "../db/schema.js";
 import type { Profile } from "../profile.js";
@@ -181,6 +181,85 @@ export async function loadRankCandidates(
     });
   }
   return [...byStory.values()];
+}
+
+/**
+ * Stories for a degraded digest: every story that passed the pre-filter, with or without a
+ * score. A scored story keeps its score. An unscored story takes the topics of the pre-filter
+ * and the lowest relevance that the ranking accepts. The same ranking rules then apply.
+ */
+export async function loadDegradedCandidates(
+  db: Db,
+  userId: number,
+  since: Date,
+  unscoredRelevance: number,
+): Promise<RankCandidate[]> {
+  const rows = await db
+    .select({
+      storyId: stories.id,
+      title: stories.title,
+      prefilterTopics: stories.prefilterTopics,
+      topics: scores.topics,
+      relevance: scores.relevance,
+      isRussiaDomestic: scores.isRussiaDomestic,
+      sourceTrust: sources.trust,
+      publishedAt: items.publishedAt,
+      fetchedAt: items.fetchedAt,
+    })
+    .from(stories)
+    .innerJoin(items, eq(items.id, stories.representativeItemId))
+    .innerJoin(sources, eq(sources.id, items.sourceId))
+    .leftJoin(
+      scores,
+      and(
+        eq(scores.storyId, stories.id),
+        eq(scores.userId, userId),
+        eq(scores.representativeItemId, stories.representativeItemId),
+      ),
+    )
+    .where(
+      and(
+        eq(stories.userId, userId),
+        gte(stories.lastItemAt, since),
+        eq(stories.prefilterStatus, "passed"),
+      ),
+    )
+    .orderBy(desc(stories.id), sql`${scores.createdAt} desc nulls last`, desc(scores.id));
+
+  const byStory = new Map<number, RankCandidate>();
+  for (const row of rows) {
+    // Rows of a story come newest score first, so the first row wins.
+    if (byStory.has(row.storyId)) continue;
+    byStory.set(row.storyId, {
+      storyId: row.storyId,
+      title: row.title,
+      topics: row.topics ?? row.prefilterTopics,
+      relevance: row.relevance ?? unscoredRelevance,
+      isRussiaDomestic: row.isRussiaDomestic ?? false,
+      sourceTrust: row.sourceTrust,
+      publishedAt: row.publishedAt ?? row.fetchedAt,
+    });
+  }
+  return [...byStory.values()];
+}
+
+/** Rank for a degraded digest. Same rules and limits as `rankDigest`, but no score is needed. */
+export async function rankDegradedDigest(params: {
+  db: Db;
+  userId: number;
+  profile: Profile;
+  kind: DigestKind;
+  now: Date;
+  windowHours?: number;
+  options?: RankOptions;
+}): Promise<RankedStory[]> {
+  const options = params.options ?? DEFAULT_RANK_OPTIONS;
+  const since = new Date(params.now.getTime() - (params.windowHours ?? 24) * 3_600_000);
+  const [candidates, sent] = await Promise.all([
+    loadDegradedCandidates(params.db, params.userId, since, options.minRelevance),
+    loadSentStoryIds(params.db, params.userId),
+  ]);
+  return selectForDigest(candidates, params.profile, params.kind, params.now, sent, options);
 }
 
 /** Rank the stories of the last `windowHours` hours and return the digest selection. */
