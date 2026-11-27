@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import type { Logger } from "pino";
 import type { Profile } from "../profile.js";
 import {
@@ -27,7 +28,7 @@ export interface ComposeOptions {
   store: UsageStore;
   /** Null when `ANTHROPIC_API_KEY` is not set. */
   provider: LlmProvider | null;
-  /** Identifies one digest run. It makes the usage rows idempotent: a replay adds no row. */
+  /** Identifies one digest run. It is part of the usage key, for tracing only. */
   runKey: string;
   dailyLimitUsd: number;
   monthlyLimitUsd: number;
@@ -121,12 +122,14 @@ export async function composeItems(
         maxTokens: options.maxOutputTokens,
       });
       // Record the usage before the validation, so an invalid answer is paid for in the books.
+      // Every provider call is a new paid request. It gets its own key, so a retry of the same
+      // run is counted once per call and is never mistaken for a replayed response.
       const cost = costUsd(response.usage, options.pricing, false);
       const recorded = await store.recordUsage(
         options.model,
         response.usage,
         cost,
-        `compose:${options.runKey}:s${story.storyId}`,
+        `compose:${options.runKey}:s${story.storyId}:${randomUUID()}`,
         "compose",
       );
       if (recorded) {

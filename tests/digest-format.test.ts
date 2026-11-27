@@ -318,10 +318,31 @@ describe("composeItems", () => {
     expect(report.items).toHaveLength(2);
     expect(store.rows).toHaveLength(3);
     expect(store.rows.every((r) => r.purpose === "compose" && r.cost > 0)).toBe(true);
-    // A replay with the same run key adds no row and no cost.
+  });
+
+  it("counts every fresh request of a retried run", async () => {
+    const store = new MemoryUsage();
+    const provider = new FakeProvider(() => good);
+    const first = await composeItems(stories, options(provider, store));
+    // The same run key again really calls the provider, so each call adds one row.
     const again = await composeItems(stories, options(provider, store));
-    expect(store.rows).toHaveLength(3);
-    expect(again.costUsd).toBe(0);
+    expect(provider.requests).toHaveLength(6);
+    expect(store.rows).toHaveLength(6);
+    expect(again.costUsd).toBeCloseTo(first.costUsd);
+    expect(await store.spentSince(new Date(0))).toBeCloseTo(first.costUsd * 2);
+  });
+
+  it("counts a partially completed run once per call", async () => {
+    const store = new MemoryUsage();
+    // An earlier run stored the usage of story 1 only, then stopped.
+    await composeItems(stories.slice(0, 1), options(new FakeProvider(() => good), store));
+    expect(store.rows).toHaveLength(1);
+    const provider = new FakeProvider(() => good);
+    const report = await composeItems(stories, options(provider, store));
+    expect(provider.requests).toHaveLength(3);
+    expect(store.rows).toHaveLength(4);
+    expect(new Set(store.rows.map((r) => r.key)).size).toBe(4);
+    expect(report.items).toHaveLength(3);
   });
 
   it("refuses to compose when scoring used the budget", async () => {
