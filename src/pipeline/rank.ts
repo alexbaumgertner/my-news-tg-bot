@@ -1,4 +1,4 @@
-import { and, desc, eq, gte, isNotNull } from "drizzle-orm";
+import { and, desc, eq, gte, isNotNull, sql } from "drizzle-orm";
 import type { Db } from "../db/client.js";
 import { digestItems, digests, items, scores, sources, stories } from "../db/schema.js";
 import type { Profile } from "../profile.js";
@@ -29,6 +29,11 @@ export const DEFAULT_RANK_OPTIONS: RankOptions = {
 /** The highest source trust. A source with this trust is a primary source. */
 export const PRIMARY_TRUST = 5;
 
+/** Bucket for a story of the safety exception that matches no topic. It ranks first. */
+export const SAFETY_BUCKET = "safety";
+/** Bucket for a story that passed the pre-filter without a topic (fail-open) and has no score. */
+export const GENERAL_BUCKET = "general";
+
 export interface RankCandidate {
   storyId: number;
   title: string;
@@ -41,6 +46,10 @@ export interface RankCandidate {
   sourceTrust: number;
   /** When the story was published. */
   publishedAt: Date;
+  /** True when the pre-filter passed the story by the safety exception. Such stories rank first. */
+  safety?: boolean;
+  /** True when the story may use the general bucket because it has no topic and no score. */
+  allowGeneral?: boolean;
 }
 
 export interface RankedStory extends RankCandidate {
@@ -97,21 +106,34 @@ export function selectForDigest(
   for (const candidate of candidates) {
     if (sentStoryIds.has(candidate.storyId) || seen.has(candidate.storyId)) continue;
     if (candidate.isRussiaDomestic || candidate.relevance < options.minRelevance) continue;
-    const topic = candidate.topics.find((id) => weights.has(id));
+    // A story that passed the pre-filter is never dropped only because it has no topic id.
+    const matched = candidate.topics.find((id) => weights.has(id));
+    // The general bucket takes only a story with no topic id. A story with known topic ids
+    // (for example notice-only ones) follows the normal topic rules.
+    const general = candidate.allowGeneral && candidate.topics.length === 0;
+    const topic =
+      matched ?? (candidate.safety ? SAFETY_BUCKET : general ? GENERAL_BUCKET : undefined);
     if (topic === undefined) continue;
     seen.add(candidate.storyId);
-    const score = storyScore(candidate, weights.get(topic) ?? 0, now, options);
+    const score = storyScore(candidate, weights.get(topic) ?? 1, now, options);
     if (score <= 0) continue;
     ranked.push({ ...candidate, topic, score });
   }
-  ranked.sort((a, b) => b.score - a.score || a.storyId - b.storyId);
+  // Safety-exception stories come first, so the digest limit never pushes them out.
+  ranked.sort(
+    (a, b) =>
+      Number(b.safety === true) - Number(a.safety === true) ||
+      b.score - a.score ||
+      a.storyId - b.storyId,
+  );
 
   const perTopic = new Map<string, number>();
   const chosen: RankedStory[] = [];
   for (const story of ranked) {
     if (chosen.length >= DIGEST_LIMITS[kind]) break;
     const used = perTopic.get(story.topic) ?? 0;
-    if (used >= options.maxPerTopic) continue;
+    // The safety bucket has no per-topic limit. The per-digest limit still applies.
+    if (story.topic !== SAFETY_BUCKET && used >= options.maxPerTopic) continue;
     perTopic.set(story.topic, used + 1);
     chosen.push(story);
   }
@@ -142,6 +164,7 @@ export async function loadRankCandidates(
     .select({
       storyId: stories.id,
       title: stories.title,
+      prefilterReason: stories.prefilterReason,
       firstSeenAt: stories.firstSeenAt,
       topics: scores.topics,
       relevance: scores.relevance,
@@ -178,9 +201,92 @@ export async function loadRankCandidates(
       isRussiaDomestic: row.isRussiaDomestic,
       sourceTrust: row.sourceTrust,
       publishedAt: row.publishedAt ?? row.fetchedAt,
+      safety: row.prefilterReason === "safety",
     });
   }
   return [...byStory.values()];
+}
+
+/**
+ * Stories for a degraded digest: every story that passed the pre-filter, with or without a
+ * score. A scored story keeps its score. An unscored story takes the topics of the pre-filter
+ * and the lowest relevance that the ranking accepts. The same ranking rules then apply.
+ */
+export async function loadDegradedCandidates(
+  db: Db,
+  userId: number,
+  since: Date,
+  unscoredRelevance: number,
+): Promise<RankCandidate[]> {
+  const rows = await db
+    .select({
+      storyId: stories.id,
+      title: stories.title,
+      prefilterTopics: stories.prefilterTopics,
+      prefilterReason: stories.prefilterReason,
+      topics: scores.topics,
+      relevance: scores.relevance,
+      isRussiaDomestic: scores.isRussiaDomestic,
+      sourceTrust: sources.trust,
+      publishedAt: items.publishedAt,
+      fetchedAt: items.fetchedAt,
+    })
+    .from(stories)
+    .innerJoin(items, eq(items.id, stories.representativeItemId))
+    .innerJoin(sources, eq(sources.id, items.sourceId))
+    .leftJoin(
+      scores,
+      and(
+        eq(scores.storyId, stories.id),
+        eq(scores.userId, userId),
+        eq(scores.representativeItemId, stories.representativeItemId),
+      ),
+    )
+    .where(
+      and(
+        eq(stories.userId, userId),
+        gte(stories.lastItemAt, since),
+        eq(stories.prefilterStatus, "passed"),
+      ),
+    )
+    .orderBy(desc(stories.id), sql`${scores.createdAt} desc nulls last`, desc(scores.id));
+
+  const byStory = new Map<number, RankCandidate>();
+  for (const row of rows) {
+    // Rows of a story come newest score first, so the first row wins.
+    if (byStory.has(row.storyId)) continue;
+    byStory.set(row.storyId, {
+      storyId: row.storyId,
+      title: row.title,
+      topics: row.topics ?? row.prefilterTopics,
+      relevance: row.relevance ?? unscoredRelevance,
+      isRussiaDomestic: row.isRussiaDomestic ?? false,
+      sourceTrust: row.sourceTrust,
+      publishedAt: row.publishedAt ?? row.fetchedAt,
+      safety: row.prefilterReason === "safety",
+      allowGeneral: row.relevance === null,
+    });
+  }
+  return [...byStory.values()];
+}
+
+/** Rank for a degraded digest. Same rules and limits as `rankDigest`, but no score is needed. */
+export async function rankDegradedDigest(params: {
+  db: Db;
+  userId: number;
+  profile: Profile;
+  kind: DigestKind;
+  now: Date;
+  windowHours?: number;
+  options?: RankOptions;
+}): Promise<RankedStory[]> {
+  const options = params.options ?? DEFAULT_RANK_OPTIONS;
+  const since = new Date(params.now.getTime() - (params.windowHours ?? 24) * 3_600_000);
+  const [candidates, sent] = await Promise.all([
+    loadDegradedCandidates(params.db, params.userId, since, options.minRelevance),
+    loadSentStoryIds(params.db, params.userId),
+  ]);
+  return selectForDigest(candidates, params.profile, params.kind, params.now, sent, options);
 }
 
 /** Rank the stories of the last `windowHours` hours and return the digest selection. */

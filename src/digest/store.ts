@@ -14,9 +14,9 @@ import {
 } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import type { Db } from "../db/client.js";
-import { digestItems, digests, items, scores, sources, stories } from "../db/schema.js";
+import { digestItems, digests, items, llmUsage, scores, sources, stories } from "../db/schema.js";
 import type { ComposeStory } from "../llm/compose-schema.js";
-import { rankDigest, type RankOptions } from "../pipeline/rank.js";
+import { rankDegradedDigest, rankDigest, type RankOptions } from "../pipeline/rank.js";
 import type { Profile } from "../profile.js";
 import type { DigestClaim, DigestStore } from "./run.js";
 
@@ -65,6 +65,59 @@ export function createDbDigestStore(options: DbDigestStoreOptions): DigestStore 
         windowHours: options.windowHours,
         options: options.rankOptions,
       });
+    },
+
+    rankDegraded(kind, now) {
+      return rankDegradedDigest({
+        db,
+        userId,
+        profile: options.profile,
+        kind,
+        now,
+        windowHours: options.windowHours,
+        options: options.rankOptions,
+      });
+    },
+
+    async daySummary(since) {
+      const [src] = await db
+        .select({
+          ok: sql<number>`count(*) filter (where ${sources.consecutiveFailures} = 0)::int`,
+          failed: sql<number>`count(*) filter (where ${sources.consecutiveFailures} > 0)::int`,
+        })
+        .from(sources)
+        .where(and(eq(sources.userId, userId), eq(sources.active, true)));
+      const [collected] = await db
+        .select({ n: count() })
+        .from(items)
+        .where(and(eq(items.userId, userId), gte(items.fetchedAt, since)));
+      const [passed] = await db
+        .select({ n: count() })
+        .from(stories)
+        .where(
+          and(
+            eq(stories.userId, userId),
+            eq(stories.prefilterStatus, "passed"),
+            gte(stories.prefilterAt, since),
+          ),
+        );
+      const [usage] = await db
+        .select({
+          inputTokens: sql<number>`coalesce(sum(${llmUsage.inputTokens}), 0)::int`,
+          outputTokens: sql<number>`coalesce(sum(${llmUsage.outputTokens}), 0)::int`,
+          costUsd: sql<string>`coalesce(sum(${llmUsage.costUsd}), 0)`,
+        })
+        .from(llmUsage)
+        .where(and(eq(llmUsage.userId, userId), gte(llmUsage.createdAt, since)));
+      return {
+        sourcesOk: src?.ok ?? 0,
+        sourcesFailed: src?.failed ?? 0,
+        itemsCollected: collected?.n ?? 0,
+        storiesPassed: passed?.n ?? 0,
+        inputTokens: usage?.inputTokens ?? 0,
+        outputTokens: usage?.outputTokens ?? 0,
+        costUsd: Number(usage?.costUsd ?? 0),
+      };
     },
 
     async loadComposeStories(ranked, maxChars) {

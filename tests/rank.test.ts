@@ -133,3 +133,76 @@ describe("selectForDigest", () => {
     expect(out[0]?.storyId).toBe(fresh.storyId);
   });
 });
+
+describe("stories without a topic id", () => {
+  it("keeps a safety-exception story under the safety bucket", () => {
+    const permit = story({ topics: [], safety: true });
+    const out = selectForDigest([permit], profile, "morning", now, new Set());
+    expect(out.map((s) => [s.storyId, s.topic])).toEqual([[permit.storyId, "safety"]]);
+  });
+
+  it("keeps a scored safety story whose topics match no digest topic", () => {
+    const permit = story({ topics: ["books", "cooking"], safety: true });
+    const out = selectForDigest([permit], profile, "morning", now, new Set());
+    expect(out[0]?.topic).toBe("safety");
+  });
+
+  it("puts an unscored fail-open story under the general bucket", () => {
+    const open = story({ topics: [], allowGeneral: true });
+    const out = selectForDigest([open], profile, "morning", now, new Set());
+    expect(out.map((s) => s.topic)).toEqual(["general"]);
+  });
+
+  it("keeps an unscored story with only notice topics out of the digest", () => {
+    const book = story({ topics: ["books"], allowGeneral: true });
+    expect(selectForDigest([book], profile, "morning", now, new Set())).toEqual([]);
+  });
+
+  it("keeps a safety story with only notice topics in the safety bucket", () => {
+    const permit = story({ topics: ["books"], allowGeneral: true, safety: true });
+    const out = selectForDigest([permit], profile, "morning", now, new Set());
+    expect(out.map((s) => s.topic)).toEqual(["safety"]);
+  });
+
+  it("ranks an unscored story with a digest topic in its topic", () => {
+    const ai = story({ topics: ["ai"], allowGeneral: true });
+    const out = selectForDigest([ai], profile, "morning", now, new Set());
+    expect(out.map((s) => s.topic)).toEqual(["ai"]);
+  });
+
+  it("still drops a scored story without a matching topic that is not safety", () => {
+    const scored = story({ topics: ["cooking"] });
+    expect(selectForDigest([scored], profile, "morning", now, new Set())).toEqual([]);
+  });
+
+  it("ranks safety stories first, so the digest limit keeps them", () => {
+    const wide = profileSchema.parse({
+      ...profile,
+      topics: ["t1", "t2", "t3", "t4", "t5", "t6", "t7", "t8"].map((id) => topic(id, 1)),
+    });
+    const regular = Array.from({ length: 8 }, (_, i) =>
+      story({ topics: [`t${i + 1}`], relevance: 10 }),
+    );
+    const weakSafety = Array.from({ length: 2 }, () =>
+      story({ topics: [], safety: true, relevance: 5, sourceTrust: 1 }),
+    );
+    const out = selectForDigest([...regular, ...weakSafety], wide, "morning", now, new Set());
+    expect(out).toHaveLength(7);
+    for (const s of weakSafety) expect(out.map((o) => o.storyId)).toContain(s.storyId);
+    expect(out.slice(0, 2).every((s) => s.topic === "safety")).toBe(true);
+  });
+
+  it("applies the digest limit to safety stories", () => {
+    const many = Array.from({ length: 9 }, () => story({ topics: [], safety: true }));
+    expect(selectForDigest(many, profile, "morning", now, new Set())).toHaveLength(7);
+    expect(selectForDigest(many, profile, "evening", now, new Set())).toHaveLength(5);
+  });
+
+  it("keeps the per-topic limit for normal topics next to safety stories", () => {
+    const ai = Array.from({ length: 5 }, () => story({ relevance: 10 }));
+    const permit = story({ topics: [], safety: true });
+    const out = selectForDigest([...ai, permit], profile, "morning", now, new Set());
+    expect(out.filter((s) => s.topic === "ai")).toHaveLength(3);
+    expect(out[0]?.storyId).toBe(permit.storyId);
+  });
+});

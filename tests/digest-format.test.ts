@@ -1,6 +1,7 @@
 import { pino } from "pino";
 import { describe, expect, it } from "vitest";
 import {
+  formatDegradedDigest,
   formatDigest,
   formatEmptyDigest,
   escapeHtml,
@@ -403,5 +404,31 @@ describe("formatEmptyDigest", () => {
     const text = formatEmptyDigest({ ...base, language: "ru", filteredOut: undefined });
     expect(text).toContain("Ничего важного сегодня.");
     expect(text).not.toContain("Отфильтровано");
+  });
+});
+
+describe("fallback buckets", () => {
+  it("shows the safety bucket first and the general bucket with their own headers", () => {
+    const story = (storyId: number, topic: string) => ({
+      storyId,
+      topic,
+      title: `Story ${storyId}`,
+      url: `https://example.com/${storyId}`,
+      sourceName: "Example",
+    });
+    const out = formatDegradedDigest({
+      kind: "morning",
+      language: "en",
+      profile,
+      now,
+      timeZone: "Europe/Istanbul",
+      stories: [story(1, "general"), story(2, "ai"), story(3, "safety")],
+    });
+    const html = out.messages.join("\n");
+    expect(html).toContain("⚠️ <b>Safety</b>");
+    expect(html).toContain("📰 <b>Other news</b>");
+    expect(html.indexOf("Safety")).toBeLessThan(html.indexOf("Agentic AI"));
+    expect(html.indexOf("Agentic AI")).toBeLessThan(html.indexOf("Other news"));
+    expect(out.shown).toHaveLength(3);
   });
 });
