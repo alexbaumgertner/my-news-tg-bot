@@ -1,0 +1,26 @@
+# Compose and send one digest. The instance name is the slot: morning or evening.
+# Install: see README, section "Schedule".
+# The digest waits up to 15 minutes for the shared lock (a pipeline run).
+# If the lock stays busy, the unit fails (exit 75) and the journal shows it.
+
+[Unit]
+Description=my-news-tg-bot: send %i digest
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=newsbot
+Group=newsbot
+WorkingDirectory=/opt/my-news-tg-bot
+EnvironmentFile=/etc/my-news-tg-bot.env
+Environment=NODE_ENV=production
+StateDirectory=newsbot
+ExecStart=/usr/bin/flock -w 900 -E 75 /var/lib/newsbot/pipeline.lock /usr/bin/node dist/digest.js --slot %i
+TimeoutStartSec=25min
+Restart=no
+MemoryHigh=500M
+MemoryMax=700M
+NoNewPrivileges=true
+ProtectSystem=full
+PrivateTmp=true

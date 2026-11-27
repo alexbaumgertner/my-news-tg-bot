@@ -5,6 +5,7 @@
 [Unit]
 Description=my-news-tg-bot (personal news digest Telegram bot)
 After=network-online.target postgresql.service
+StartLimitIntervalSec=0
 Wants=network-online.target
 
 [Service]
