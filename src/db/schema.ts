@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import {
+  type AnyPgColumn,
   bigint,
   boolean,
   check,
@@ -68,10 +69,18 @@ export const stories = pgTable(
     title: text("title").notNull(),
     embedding: vector("embedding", { dimensions: EMBEDDING_DIMENSIONS }),
     firstSeenAt: timestamp("first_seen_at", { withTimezone: true }).notNull().defaultNow(),
+    /** Time of the newest item in the story. The clustering window counts from it. */
+    lastItemAt: timestamp("last_item_at", { withTimezone: true }).notNull().defaultNow(),
+    /** The best item of the story. Its title and embedding are copied to the story. */
+    representativeItemId: bigint("representative_item_id", { mode: "number" }).references(
+      (): AnyPgColumn => items.id,
+      { onDelete: "set null" },
+    ),
     createdAt: createdAt(),
   },
   (t) => [
     index("stories_user_first_seen_idx").on(t.userId, t.firstSeenAt),
+    index("stories_user_last_item_idx").on(t.userId, t.lastItemAt),
     index("stories_embedding_idx").using("hnsw", t.embedding.op("vector_cosine_ops")),
   ],
 );
