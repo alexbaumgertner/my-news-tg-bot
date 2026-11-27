@@ -70,9 +70,18 @@ export interface GoldenBuildResult {
 
 /** Excel in a Russian locale saves with ";" and Numbers may use a tab. Detect it from the header. */
 function detectDelimiter(text: string): string {
-  const header = text.split(/\r?\n/, 1)[0] ?? "";
   for (const delimiter of [",", ";", "\t"]) {
-    if (header.split(delimiter).some((name) => name.trim() === "label")) return delimiter;
+    try {
+      const rows: string[][] = parse(text, {
+        bom: true,
+        delimiter,
+        to_line: 1,
+        relax_column_count: true,
+      });
+      if (rows[0]?.some((name) => name.trim() === "label")) return delimiter;
+    } catch {
+      // The header is not valid with this delimiter. Try the next one.
+    }
   }
   return ",";
 }
@@ -88,7 +97,7 @@ export function buildGolden(csvText: string): GoldenBuildResult {
     records = parse(csvText, {
       bom: true,
       columns: (header: string[]) => header.map((name) => name.trim()),
-      delimiter: detectDelimiter(csvText.startsWith("\uFEFF") ? csvText.slice(1) : csvText),
+      delimiter: detectDelimiter(csvText),
       skip_empty_lines: true,
       relax_column_count: true,
     });

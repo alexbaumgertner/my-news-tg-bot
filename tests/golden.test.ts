@@ -237,6 +237,36 @@ describe("buildGolden", () => {
     expect(result.items[0]).toMatchObject({ id: "x1", title: "A, b", topics: ["sport"] });
   });
 
+  describe.each([
+    ["comma", ","],
+    ["semicolon", ";"],
+    ["tab", "\t"],
+  ])("quoted headers with a %s", (_name, d) => {
+    const columns = [...CSV_COLUMNS];
+    const header = columns.map((c) => `"${c}"`).join(d);
+    const values = columns.map((c) => {
+      const byColumn: Record<string, string> = {
+        id: "q1",
+        title: "A, b",
+        label: "keep",
+        topics: "sport",
+        reason: "ok",
+      };
+      return `"${byColumn[c] ?? ""}"`;
+    });
+    const body = `${header}\r\n${values.join(d)}\r\n`;
+
+    it("detects the delimiter", () => {
+      const result = buildGolden(body);
+      expect(result.items[0]).toMatchObject({ id: "q1", title: "A, b", topics: ["sport"] });
+    });
+
+    it("detects the delimiter with a BOM", () => {
+      const result = buildGolden("﻿" + body);
+      expect(result.items[0]).toMatchObject({ id: "q1", label: "keep" });
+    });
+  });
+
   it("accepts a label in any case", () => {
     const csv = file("labeled.csv").replace(",keep,", ",Keep ,");
     expect(buildGolden(csv).keep).toBe(1);
