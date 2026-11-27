@@ -181,6 +181,35 @@ describe("formatDigest rules", () => {
     for (let i = 0; i < 12; i++) expect(small.messages.join("\n")).toContain(`Story ${i}`);
   });
 
+  it("lists the items of each message, so that each item has one keyboard row", () => {
+    const many = Array.from({ length: 12 }, (_, i) =>
+      item({ storyId: 100 + i, url: `https://example.com/${i}`, headline: `A & B <${i}>` }),
+    );
+    const result = formatDigest({ ...base, language: "en", items: many, limit: 800 });
+    expect(result.messages.length).toBeGreaterThan(1);
+    expect(result.messageItems).toHaveLength(result.messages.length);
+    // Every item is in exactly one message, in order, and the text of that message shows it.
+    expect(result.messageItems.flat()).toEqual(Array.from({ length: 12 }, (_, i) => i + 1));
+    result.messages.forEach((message, index) => {
+      for (const position of result.messageItems[index]!) {
+        expect(message).toContain(`${position}. <b>A &amp; B &lt;${position - 1}&gt;</b>`);
+      }
+    });
+  });
+
+  it("lists the items of each message in the degraded digest", () => {
+    const stories = Array.from({ length: 10 }, (_, i) => ({
+      storyId: i + 1,
+      topic: "ai",
+      title: `Title ${i} & more`,
+      url: `https://example.com/${i}`,
+      sourceName: "Src",
+    }));
+    const result = formatDegradedDigest({ ...base, language: "en", stories, limit: 600 });
+    expect(result.messages.length).toBeGreaterThan(1);
+    expect(result.messageItems.flat()).toEqual(Array.from({ length: 10 }, (_, i) => i + 1));
+  });
+
   it("gives every shown item a link and a why-me line", () => {
     const text = formatDigest({ ...base, language: "ru", items }).messages.join("\n");
     expect(text.match(/🔗 <a href="https?:\/\//g)).toHaveLength(4);

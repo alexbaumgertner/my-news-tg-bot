@@ -1,3 +1,4 @@
+import type { InlineKeyboardMarkup } from "grammy/types";
 import { pino } from "pino";
 import { describe, expect, it } from "vitest";
 import {
@@ -172,15 +173,15 @@ class FakeStore implements DigestStore {
 }
 
 class FakeSender implements MessageSender {
-  sent: { chatId: number; html: string }[] = [];
+  sent: { chatId: number; html: string; replyMarkup?: InlineKeyboardMarkup }[] = [];
   failNext = 0;
 
-  async send(chatId: number, html: string) {
+  async send(chatId: number, html: string, replyMarkup?: InlineKeyboardMarkup) {
     if (this.failNext > 0) {
       this.failNext--;
       throw new Error("Telegram is down");
     }
-    this.sent.push({ chatId, html });
+    this.sent.push({ chatId, html, replyMarkup });
     return 100 + this.sent.length;
   }
 }
@@ -256,6 +257,16 @@ describe("runDigest", () => {
     expect(store.rows[0]!.items.map((i) => i.storyId)).toEqual([1, 2]);
     // The footer counts exclude the shown stories.
     expect(store.filteredCalls[0]).toEqual([1, 2]);
+    // One row of 👍 and 👎 buttons for each item. The data holds the digest id and the position.
+    expect(
+      sender.sent[0]!.replyMarkup?.inline_keyboard.map((row) => row.map((b) => b.text)),
+    ).toEqual([
+      ["👍 1", "👎 1"],
+      ["👍 2", "👎 2"],
+    ]);
+    expect(sender.sent[0]!.replyMarkup?.inline_keyboard[1]![0]).toMatchObject({
+      callback_data: `f:${store.rows[0]!.id}:2:u`,
+    });
     const calls = provider!.requests.length;
 
     const second = await runDigest(options());

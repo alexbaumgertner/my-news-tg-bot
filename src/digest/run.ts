@@ -1,4 +1,6 @@
+import type { InlineKeyboardMarkup } from "grammy/types";
 import type { Logger } from "pino";
+import { feedbackKeyboard } from "../feedback/callback.js";
 import { composeItems, type ComposedItem } from "../llm/compose.js";
 import type { ComposeStory, DigestLanguage } from "../llm/compose-schema.js";
 import type { Pricing } from "../llm/pricing.js";
@@ -10,7 +12,7 @@ import { formatDegradedDigest, formatDigest, formatEmptyDigest, safeUrl } from "
 
 /** Sends one Telegram HTML message and returns its message id. Tests use a fake. */
 export interface MessageSender {
-  send(chatId: number, html: string): Promise<number>;
+  send(chatId: number, html: string, replyMarkup?: InlineKeyboardMarkup): Promise<number>;
 }
 
 /** What is saved for one story of a digest. */
@@ -175,6 +177,8 @@ export async function runDigest(options: DigestRunOptions): Promise<DigestResult
   logger.info({ kind, ranked: ranked.length }, "Ranking finished");
 
   let messages: string[] = [];
+  /** For each message, the positions of the items that get feedback buttons. */
+  let messageItems: number[][] = [];
   let records: DigestItemRecord[] = [];
   let degraded = false;
   const since = new Date(now.getTime() - options.windowHours * 3_600_000);
@@ -193,6 +197,7 @@ export async function runDigest(options: DigestRunOptions): Promise<DigestResult
   const useDegraded = (formatted: Awaited<ReturnType<typeof buildDegraded>>) => {
     degraded = true;
     messages = formatted.messages;
+    messageItems = formatted.messageItems;
     records = formatted.shown.map((story) => ({
       storyId: story.storyId,
       headline: story.title,
@@ -267,6 +272,7 @@ export async function runDigest(options: DigestRunOptions): Promise<DigestResult
       );
       const formatted = formatDigest({ ...base, items: usable, filteredOut });
       messages = formatted.messages;
+      messageItems = formatted.messageItems;
       records = formatted.shown.map((item) => ({
         storyId: item.storyId,
         headline: item.headline,
@@ -305,8 +311,11 @@ export async function runDigest(options: DigestRunOptions): Promise<DigestResult
   const digestId = claim.digestId;
   const messageIds: number[] = [];
   try {
-    for (const message of messages) {
-      messageIds.push(await options.sender.send(options.chatId, message));
+    for (const [index, message] of messages.entries()) {
+      // One row of buttons for each item in the message. A message without items has none.
+      const positions = messageItems[index] ?? [];
+      const keyboard = positions.length > 0 ? feedbackKeyboard(digestId, positions) : undefined;
+      messageIds.push(await options.sender.send(options.chatId, message, keyboard));
     }
   } catch (error) {
     // Do not log the error object: it can carry request details.

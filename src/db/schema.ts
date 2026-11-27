@@ -226,6 +226,11 @@ export const digestItems = pgTable(
   ],
 );
 
+/**
+ * One vote of the user on one digest item. A second press on the same item changes or
+ * deletes the row, so there is at most one vote per item. The story, topics and source are
+ * copied at vote time. The adjustments are computed from these rows.
+ */
 export const feedback = pgTable(
   "feedback",
   {
@@ -234,10 +239,50 @@ export const feedback = pgTable(
     digestItemId: bigint("digest_item_id", { mode: "number" })
       .notNull()
       .references(() => digestItems.id, { onDelete: "cascade" }),
+    /** "up" or "down". */
     kind: text("kind").notNull(),
+    storyId: bigint("story_id", { mode: "number" }).references(() => stories.id, {
+      onDelete: "set null",
+    }),
+    /** Topic ids of the story at vote time. */
+    topics: text("topics")
+      .array()
+      .notNull()
+      .default(sql`'{}'::text[]`),
+    sourceId: bigint("source_id", { mode: "number" }).references(() => sources.id, {
+      onDelete: "set null",
+    }),
     createdAt: createdAt(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [index("feedback_user_created_idx").on(t.userId, t.createdAt)],
+  (t) => [
+    index("feedback_user_created_idx").on(t.userId, t.createdAt),
+    unique("feedback_user_digest_item_uq").on(t.userId, t.digestItemId),
+    check("feedback_kind_check", sql`${t.kind} in ('up', 'down')`),
+  ],
+);
+
+/**
+ * Multiplier that the votes give to a topic weight or a source trust. The rows are derived
+ * from `feedback`: the table is rewritten after each vote. The profile and the source
+ * config are never changed.
+ */
+export const weightAdjustments = pgTable(
+  "weight_adjustments",
+  {
+    id: id(),
+    userId: userId(),
+    /** "topic" or "source". */
+    dimension: text("dimension").notNull(),
+    /** A topic id, or a source id as text. */
+    key: text("key").notNull(),
+    multiplier: real("multiplier").notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    unique("weight_adjustments_user_dim_key_uq").on(t.userId, t.dimension, t.key),
+    check("weight_adjustments_dimension_check", sql`${t.dimension} in ('topic', 'source')`),
+  ],
 );
 
 export const profileVersions = pgTable(

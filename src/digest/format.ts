@@ -26,6 +26,11 @@ export interface FormattedDigest {
   messages: string[];
   /** Items that the messages contain. */
   shown: ComposedItem[];
+  /**
+   * For each message, the positions (1-based, the numbers in the text) of the items that it
+   * contains. The sender puts one feedback row under the message for each of them.
+   */
+  messageItems: number[][];
   /** Items left out because the URL is not a valid http or https URL. */
   droppedInvalidUrl: number;
 }
@@ -158,23 +163,33 @@ function formatItem(item: ComposedItem, number: number, language: DigestLanguage
   ].join("\n");
 }
 
+/** The text of one item and its position in the digest. */
+interface ItemText {
+  text: string;
+  position: number;
+}
+
+/** A piece of a message: the text and the positions of the items in it. */
+interface Unit {
+  text: string;
+  positions: number[];
+}
+
 /**
  * Pack the item texts of one topic into blocks that fit the limit. The header starts the first
  * block. An item is never cut. Each item is far shorter than the limit (the schema caps it).
  */
-function packTopic(header: string, items: string[], limit: number): string[] {
-  const blocks: string[] = [];
-  let current = header;
-  let hasItem = false;
+function packTopic(header: string, items: ItemText[], limit: number): Unit[] {
+  const blocks: Unit[] = [];
+  let current: Unit = { text: header, positions: [] };
   for (const item of items) {
-    const next = `${current}${hasItem ? "\n\n" : "\n"}${item}`;
-    if (next.length > limit && hasItem) {
+    const next = `${current.text}${current.positions.length > 0 ? "\n\n" : "\n"}${item.text}`;
+    if (next.length > limit && current.positions.length > 0) {
       blocks.push(current);
-      current = item;
+      current = { text: item.text, positions: [item.position] };
     } else {
-      current = next;
+      current = { text: next, positions: [...current.positions, item.position] };
     }
-    hasItem = true;
   }
   blocks.push(current);
   return blocks;
@@ -196,7 +211,7 @@ export function formatDigest(input: DigestInput): FormattedDigest {
     if (url) valid.push({ item, url });
   }
   const droppedInvalidUrl = input.items.length - valid.length;
-  if (valid.length === 0) return { messages: [], shown: [], droppedInvalidUrl };
+  if (valid.length === 0) return { messages: [], shown: [], messageItems: [], droppedInvalidUrl };
 
   // Group by topic in profile order. The safety bucket goes first. Other unknown topics go last.
   const order = topicOrder(input.profile);
@@ -211,15 +226,15 @@ export function formatDigest(input: DigestInput): FormattedDigest {
   );
 
   const shown: ComposedItem[] = [];
-  const blocks: string[] = [];
+  const blocks: Unit[] = [];
   let number = 0;
   for (const topicId of topicIds) {
     const header = topicHeader(input.profile, topicId);
-    const texts: string[] = [];
+    const texts: ItemText[] = [];
     for (const { item, url } of groups.get(topicId)!) {
       number++;
       shown.push(item);
-      texts.push(formatItem(item, number, input.language, url));
+      texts.push({ text: formatItem(item, number, input.language, url), position: number });
     }
     blocks.push(...packTopic(header, texts, limit));
   }
@@ -228,9 +243,15 @@ export function formatDigest(input: DigestInput): FormattedDigest {
   const footer = filteredFooter(input);
 
   // Pack the head, the blocks and the footer into messages.
-  const units = [head, ...blocks];
-  if (footer) units.push(footer);
-  return { messages: packUnits(units, limit), shown, droppedInvalidUrl };
+  const units: Unit[] = [{ text: head, positions: [] }, ...blocks];
+  if (footer) units.push({ text: footer, positions: [] });
+  const packed = packUnits(units, limit);
+  return {
+    messages: packed.map((m) => m.text),
+    shown,
+    messageItems: packed.map((m) => m.positions),
+    droppedInvalidUrl,
+  };
 }
 
 type HeadInput = Omit<DigestInput, "items">;
@@ -267,12 +288,17 @@ function filteredFooter(input: HeadInput): string | null {
     : null;
 }
 
-function packUnits(units: string[], limit: number): string[] {
-  const messages: string[] = [];
-  let current = "";
+function packUnits(units: Unit[], limit: number): Unit[] {
+  const messages: Unit[] = [];
+  let current: Unit | null = null;
   for (const unit of units) {
-    const next = current ? `${current}\n\n${unit}` : unit;
-    if (next.length <= limit) {
+    const next: Unit = current
+      ? {
+          text: `${current.text}\n\n${unit.text}`,
+          positions: [...current.positions, ...unit.positions],
+        }
+      : unit;
+    if (next.text.length <= limit) {
       current = next;
     } else {
       if (current) messages.push(current);
@@ -300,6 +326,8 @@ export interface DegradedDigestInput extends Omit<DigestInput, "items"> {
 export interface FormattedDegradedDigest {
   messages: string[];
   shown: DegradedStory[];
+  /** See `FormattedDigest.messageItems`. */
+  messageItems: number[][];
   droppedInvalidUrl: number;
 }
 
@@ -317,7 +345,7 @@ export function formatDegradedDigest(input: DegradedDigestInput): FormattedDegra
     if (url) valid.push({ story, url });
   }
   const droppedInvalidUrl = input.stories.length - valid.length;
-  if (valid.length === 0) return { messages: [], shown: [], droppedInvalidUrl };
+  if (valid.length === 0) return { messages: [], shown: [], messageItems: [], droppedInvalidUrl };
 
   const order = topicOrder(input.profile);
   const groups = new Map<string, typeof valid>();
@@ -331,25 +359,36 @@ export function formatDegradedDigest(input: DegradedDigestInput): FormattedDegra
   );
 
   const shown: DegradedStory[] = [];
-  const blocks: string[] = [];
+  const blocks: Unit[] = [];
   let number = 0;
   for (const topicId of topicIds) {
     const header = topicHeader(input.profile, topicId);
-    const texts: string[] = [];
+    const texts: ItemText[] = [];
     for (const { story, url } of groups.get(topicId)!) {
       number++;
       shown.push(story);
       // The title comes from a remote source. Cap its length so that a message stays small.
       const title = story.title.slice(0, MAX_DEGRADED_TITLE_CHARS);
-      texts.push(
-        `${number}. <a href="${escapeAttr(url)}">${escapeHtml(title)}</a> · ${escapeHtml(story.sourceName)}`,
-      );
+      texts.push({
+        text: `${number}. <a href="${escapeAttr(url)}">${escapeHtml(title)}</a> · ${escapeHtml(story.sourceName)}`,
+        position: number,
+      });
     }
     blocks.push(...packTopic(header, texts, limit));
   }
 
-  const units = [digestHead(input, shown.length), LABELS[input.language].degraded, ...blocks];
+  const units: Unit[] = [
+    { text: digestHead(input, shown.length), positions: [] },
+    { text: LABELS[input.language].degraded, positions: [] },
+    ...blocks,
+  ];
   const footer = filteredFooter(input);
-  if (footer) units.push(footer);
-  return { messages: packUnits(units, limit), shown, droppedInvalidUrl };
+  if (footer) units.push({ text: footer, positions: [] });
+  const packed = packUnits(units, limit);
+  return {
+    messages: packed.map((m) => m.text),
+    shown,
+    messageItems: packed.map((m) => m.positions),
+    droppedInvalidUrl,
+  };
 }

@@ -78,6 +78,13 @@
       "when": 1795819662790,
       "tag": "0010_digest_claim",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1795821919348,
+      "tag": "0011_feedback_votes",
+      "breakpoints": true
     }
   ]
 }

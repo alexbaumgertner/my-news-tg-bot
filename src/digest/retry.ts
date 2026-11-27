@@ -59,10 +59,10 @@ export function withRetry(
 ): MessageSender {
   const { maxAttempts, baseDelayMs, maxDelayMs } = { ...DEFAULT_RETRY_OPTIONS, ...options };
   return {
-    async send(chatId, html) {
+    async send(chatId, html, replyMarkup) {
       for (let attempt = 1; ; attempt++) {
         try {
-          return await sender.send(chatId, html);
+          return await sender.send(chatId, html, replyMarkup);
         } catch (error) {
           const decision = classifySendError(error);
           if (!decision.retry || attempt >= maxAttempts) throw error;

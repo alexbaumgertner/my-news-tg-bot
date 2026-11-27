@@ -1,6 +1,7 @@
 import { and, desc, eq, gte, isNotNull, sql } from "drizzle-orm";
 import type { Db } from "../db/client.js";
 import { digestItems, digests, items, scores, sources, stories } from "../db/schema.js";
+import { NO_ADJUSTMENTS, type Adjustments } from "../feedback/rules.js";
 import type { Profile } from "../profile.js";
 
 export type DigestKind = "morning" | "evening";
@@ -17,6 +18,11 @@ export interface RankOptions {
   freshnessHalfLifeHours: number;
   /** Added to the score of a story from a source with trust 5 (a primary source). Default: 0.05. */
   primarySourceBonus: number;
+  /**
+   * Multipliers from the feedback votes. They scale the topic weight and the source trust.
+   * Default: none, which gives the same scores as before.
+   */
+  adjustments?: Adjustments;
 }
 
 export const DEFAULT_RANK_OPTIONS: RankOptions = {
@@ -44,6 +50,8 @@ export interface RankCandidate {
   isRussiaDomestic: boolean;
   /** 1–5. */
   sourceTrust: number;
+  /** The source of the representative item. Feedback adjusts the trust of a source by this id. */
+  sourceId?: number;
   /** When the story was published. */
   publishedAt: Date;
   /** True when the pre-filter passed the story by the safety exception. Such stories rank first. */
@@ -67,18 +75,21 @@ export function freshness(publishedAt: Date, now: Date, halfLifeHours: number): 
 /**
  * score = relevance × topic weight × source trust × freshness + primary-source bonus.
  * Relevance and trust are scaled to 0–1, so the score is 0–1 plus the bonus.
+ * `trustMultiplier` (feedback) scales the trust factor. The bonus uses the trust of the config.
  */
 export function storyScore(
   candidate: Pick<RankCandidate, "relevance" | "sourceTrust" | "publishedAt">,
   topicWeight: number,
   now: Date,
   options: RankOptions = DEFAULT_RANK_OPTIONS,
+  trustMultiplier = 1,
 ): number {
   const bonus = candidate.sourceTrust >= PRIMARY_TRUST ? options.primarySourceBonus : 0;
   return (
     (candidate.relevance / 10) *
       topicWeight *
       (candidate.sourceTrust / PRIMARY_TRUST) *
+      trustMultiplier *
       freshness(candidate.publishedAt, now, options.freshnessHalfLifeHours) +
     bonus
   );
@@ -101,6 +112,7 @@ export function selectForDigest(
   const weights = new Map(
     profile.topics.filter((t) => t.mode === "digest").map((t) => [t.id, t.weight]),
   );
+  const adjustments = options.adjustments ?? NO_ADJUSTMENTS;
   const ranked: RankedStory[] = [];
   const seen = new Set<number>();
   for (const candidate of candidates) {
@@ -115,7 +127,10 @@ export function selectForDigest(
       matched ?? (candidate.safety ? SAFETY_BUCKET : general ? GENERAL_BUCKET : undefined);
     if (topic === undefined) continue;
     seen.add(candidate.storyId);
-    const score = storyScore(candidate, weights.get(topic) ?? 1, now, options);
+    const weight = (weights.get(topic) ?? 1) * (adjustments.topics.get(topic) ?? 1);
+    const trust =
+      candidate.sourceId === undefined ? 1 : (adjustments.sources.get(candidate.sourceId) ?? 1);
+    const score = storyScore(candidate, weight, now, options, trust);
     if (score <= 0) continue;
     ranked.push({ ...candidate, topic, score });
   }
@@ -170,6 +185,7 @@ export async function loadRankCandidates(
       relevance: scores.relevance,
       isRussiaDomestic: scores.isRussiaDomestic,
       sourceTrust: sources.trust,
+      sourceId: sources.id,
       publishedAt: items.publishedAt,
       fetchedAt: items.fetchedAt,
     })
@@ -200,6 +216,7 @@ export async function loadRankCandidates(
       relevance: row.relevance,
       isRussiaDomestic: row.isRussiaDomestic,
       sourceTrust: row.sourceTrust,
+      sourceId: row.sourceId,
       publishedAt: row.publishedAt ?? row.fetchedAt,
       safety: row.prefilterReason === "safety",
     });
@@ -228,6 +245,7 @@ export async function loadDegradedCandidates(
       relevance: scores.relevance,
       isRussiaDomestic: scores.isRussiaDomestic,
       sourceTrust: sources.trust,
+      sourceId: sources.id,
       publishedAt: items.publishedAt,
       fetchedAt: items.fetchedAt,
     })
@@ -262,6 +280,7 @@ export async function loadDegradedCandidates(
       relevance: row.relevance ?? unscoredRelevance,
       isRussiaDomestic: row.isRussiaDomestic ?? false,
       sourceTrust: row.sourceTrust,
+      sourceId: row.sourceId,
       publishedAt: row.publishedAt ?? row.fetchedAt,
       safety: row.prefilterReason === "safety",
       allowGeneral: row.relevance === null,
