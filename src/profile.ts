@@ -1,3 +1,6 @@
+import { existsSync } from "node:fs";
+import { join } from "node:path";
+import type { Logger } from "pino";
 import { z } from "zod";
 import { loadYamlFile } from "./config.js";
 
@@ -51,4 +54,16 @@ export type Profile = z.infer<typeof profileSchema>;
 /** Load and validate a profile file. Throws ConfigError with a clear message. */
 export function loadProfile(path: string): Profile {
   return loadYamlFile(path, profileSchema);
+}
+
+/**
+ * Load `profile.yaml` from `configDir`. If it is missing, load `profile.example.yaml`
+ * and log a warning.
+ */
+export function loadProfileOrExample(configDir: string, logger: Logger): Profile {
+  const path = join(configDir, "profile.yaml");
+  if (existsSync(path)) return loadProfile(path);
+  const examplePath = join(configDir, "profile.example.yaml");
+  logger.warn({ path, examplePath }, "profile.yaml is missing. Using the example profile.");
+  return loadProfile(examplePath);
 }
