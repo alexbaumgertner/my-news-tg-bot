@@ -6,6 +6,7 @@ import { createDb } from "../src/db/client.js";
 import { EMBEDDING_DIMENSIONS, items, sources, stories } from "../src/db/schema.js";
 import { parseEnv } from "../src/config.js";
 import { loadProfile, loadProfileOrExample, profileSchema, type Profile } from "../src/profile.js";
+import { createDbStoryStore } from "../src/pipeline/dedup.js";
 import type { EmbeddingsClient } from "../src/pipeline/embeddings.js";
 import {
   KeywordMatcher,
@@ -332,6 +333,91 @@ describe.skipIf(!url)("runPrefilter", () => {
       // Decided stories are not decided again.
       const again = await runPrefilter({ ...base, embeddings: failing });
       expect(again.passed + again.dropped).toBe(0);
+    } finally {
+      await client.end({ timeout: 5 });
+    }
+  });
+  it("decides a story again only when its representative changes", async () => {
+    const { db, client } = createDb(url!, { max: 1 });
+    try {
+      await client.unsafe(
+        "DROP SCHEMA IF EXISTS public CASCADE; DROP SCHEMA IF EXISTS drizzle CASCADE; CREATE SCHEMA public",
+      );
+      await migrate(db, { migrationsFolder: resolve("drizzle") });
+      const addSource = async (slug: string, trust: number) => {
+        const [row] = await db
+          .insert(sources)
+          .values({
+            userId: 1,
+            slug,
+            name: slug,
+            type: "rss",
+            url: `https://${slug}.example/rss`,
+            language: "en",
+            trust,
+            pollInterval: "1h",
+            active: true,
+          })
+          .returning();
+        return row!;
+      };
+      const addItem = async (sourceId: number, n: number, title: string) => {
+        const [row] = await db
+          .insert(items)
+          .values({
+            userId: 1,
+            sourceId,
+            url: `https://x.example/${n}`,
+            canonicalUrl: `https://x.example/${n}`,
+            title,
+            contentHash: `h${n}`,
+          })
+          .returning();
+        return row!;
+      };
+      const secondary = await addSource("secondary", 2);
+      const primary = await addSource("primary", 5);
+      const weak = await addItem(secondary.id, 1, "Plain words");
+      const strong = await addItem(primary.id, 2, "Claude Code 3 released");
+      const [story] = await db
+        .insert(stories)
+        .values({ userId: 1, title: weak.title, embedding: vec(1), representativeItemId: weak.id })
+        .returning();
+      const embed = vi.fn(async (texts: string[]) => texts.map(() => vec(0, 0, 1)));
+      const base = {
+        db,
+        userId: 1,
+        logger: pino({ level: "silent" }),
+        profile,
+        ...options,
+        embeddings: { embed } as EmbeddingsClient,
+      };
+
+      const first = await runPrefilter(base);
+      expect(first.dropped).toBe(1);
+      const [dropped] = await db.select().from(stories);
+      expect(dropped!.prefilterStatus).toBe("dropped");
+
+      // Unchanged representative: the story is not evaluated again.
+      const second = await runPrefilter(base);
+      expect(second.passed + second.dropped).toBe(0);
+
+      // A new representative clears the decision. The story passes on the keyword.
+      await createDbStoryStore(db, 1).setRepresentative(story!.id, {
+        id: strong.id,
+        title: strong.title,
+        embedding: vec(1),
+        trust: 5,
+        at: new Date(),
+        textLength: 0,
+      });
+      const [cleared] = await db.select().from(stories);
+      expect(cleared!.prefilterStatus).toBeNull();
+      const third = await runPrefilter(base);
+      expect(third.passed).toBe(1);
+      const [passed] = await db.select().from(stories);
+      expect(passed!.prefilterStatus).toBe("passed");
+      expect(passed!.prefilterReason).toBe("keyword");
     } finally {
       await client.end({ timeout: 5 });
     }

@@ -365,6 +365,7 @@ export async function runPrefilter(options: PrefilterRunOptions): Promise<Prefil
     const rows = await db
       .select({
         id: stories.id,
+        representativeItemId: stories.representativeItemId,
         title: stories.title,
         embedding: stories.embedding,
         text: sql<string | null>`left(${items.text}, ${MATCH_TEXT_CHARS})`,
@@ -381,7 +382,12 @@ export async function runPrefilter(options: PrefilterRunOptions): Promise<Prefil
     if (rows.length === 0) break;
     cursor = rows[rows.length - 1]!.id;
 
-    const decisions: { id: number; source: string; decision: PrefilterDecision }[] = [];
+    const decisions: {
+      id: number;
+      representativeItemId: number | null;
+      source: string;
+      decision: PrefilterDecision;
+    }[] = [];
     for (const row of rows) {
       const story: PrefilterStory = {
         title: row.title,
@@ -394,12 +400,17 @@ export async function runPrefilter(options: PrefilterRunOptions): Promise<Prefil
         const vectors = await loadVectors();
         if (vectors) decision = prefilter.decide(story, vectors);
       }
-      decisions.push({ id: row.id, source: row.source ?? "unknown", decision });
+      decisions.push({
+        id: row.id,
+        representativeItemId: row.representativeItemId,
+        source: row.source ?? "unknown",
+        decision,
+      });
     }
 
     const now = new Date();
     await db.transaction(async (tx) => {
-      for (const { id, decision } of decisions) {
+      for (const { id, representativeItemId, decision } of decisions) {
         await tx
           .update(stories)
           .set({
@@ -409,7 +420,13 @@ export async function runPrefilter(options: PrefilterRunOptions): Promise<Prefil
             prefilterSimilarity: decision.similarity,
             prefilterAt: now,
           })
-          .where(eq(stories.id, id));
+          // Skip a story whose representative changed while this batch ran. It is decided again.
+          .where(
+            and(
+              eq(stories.id, id),
+              sql`${stories.representativeItemId} is not distinct from ${representativeItemId}`,
+            ),
+          );
       }
     });
     for (const { source, decision } of decisions) {

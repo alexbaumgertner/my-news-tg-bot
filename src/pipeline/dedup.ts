@@ -183,9 +183,20 @@ export function createDbStoryStore(db: Db, userId: number): StoryStore {
     },
 
     async setRepresentative(storyId, item) {
+      // The pre-filter decision belongs to the old representative. Clear it, so that the
+      // pre-filter decides the story again.
       await db
         .update(stories)
-        .set({ title: item.title, embedding: item.embedding, representativeItemId: item.id })
+        .set({
+          title: item.title,
+          embedding: item.embedding,
+          representativeItemId: item.id,
+          prefilterStatus: null,
+          prefilterReason: null,
+          prefilterTopics: [],
+          prefilterSimilarity: null,
+          prefilterAt: null,
+        })
         .where(eq(stories.id, storyId));
     },
   };
