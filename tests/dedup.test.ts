@@ -92,4 +92,57 @@ describe.skipIf(!url)("runDedup", () => {
       await client.end();
     }
   });
+
+  it("clusters oldest first across batches", async () => {
+    const { db, client } = createDb(url!, { max: 1 });
+    try {
+      await client.unsafe(
+        "DROP SCHEMA IF EXISTS public CASCADE; DROP SCHEMA IF EXISTS drizzle CASCADE; CREATE SCHEMA public",
+      );
+      await migrate(db, { migrationsFolder: resolve("drizzle") });
+      const [source] = await db
+        .insert(sources)
+        .values({
+          userId: 1,
+          slug: "s",
+          name: "S",
+          type: "rss",
+          url: "https://s.example/feed",
+          language: "en",
+          trust: 3,
+          pollInterval: "1h",
+          active: true,
+        })
+        .returning();
+      const now = new Date();
+      const row = (n: number, hoursAgo: number) => ({
+        userId: 1,
+        sourceId: source!.id,
+        url: `https://x.example/${n}`,
+        canonicalUrl: `https://x.example/${n}`,
+        title: `quake ${n}`,
+        contentHash: `h${n}`,
+        publishedAt: new Date(now.getTime() - hoursAgo * HOUR),
+      });
+      // Newest first by id: the oldest item (id 3) arrives after two newer items.
+      // The gaps are 40 hours each, so one chain of gaps joins all three.
+      await db.insert(items).values([row(1, 90), row(2, 50), row(3, 130)]);
+      const embeddings: EmbeddingsClient = {
+        embed: async (texts) => texts.map(() => vector(0)),
+      };
+      const report = await runDedup({
+        db,
+        userId: 1,
+        logger: pino({ level: "silent" }),
+        threshold: 0.88,
+        windowMs: 48 * HOUR,
+        embeddings,
+        batchSize: 2,
+      });
+      expect(report).toMatchObject({ clustered: 3, newStories: 1 });
+      expect(await db.$count(stories)).toBe(1);
+    } finally {
+      await client.end();
+    }
+  });
 });

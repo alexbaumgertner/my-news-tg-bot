@@ -1,4 +1,17 @@
-import { and, asc, cosineDistance, eq, gt, isNotNull, isNull, sql } from "drizzle-orm";
+import {
+  and,
+  asc,
+  cosineDistance,
+  eq,
+  gt,
+  gte,
+  isNotNull,
+  isNull,
+  lte,
+  or,
+  sql,
+} from "drizzle-orm";
+import type { SQL } from "drizzle-orm";
 import type { Logger } from "pino";
 import type { Db } from "../db/client.js";
 import { items, sources, stories } from "../db/schema.js";
@@ -119,7 +132,8 @@ export function createDbStoryStore(db: Db, userId: number): StoryStore {
           and(
             eq(stories.userId, userId),
             isNotNull(stories.embedding),
-            sql`${stories.lastItemAt} between ${from} and ${to}`,
+            gte(stories.lastItemAt, from),
+            lte(stories.lastItemAt, to),
           ),
         )
         .orderBy(distance)
@@ -161,8 +175,8 @@ export function createDbStoryStore(db: Db, userId: number): StoryStore {
         await tx
           .update(stories)
           .set({
-            firstSeenAt: sql`least(${stories.firstSeenAt}, ${item.at})`,
-            lastItemAt: sql`greatest(${stories.lastItemAt}, ${item.at})`,
+            firstSeenAt: sql`least(${stories.firstSeenAt}, ${item.at.toISOString()}::timestamptz)`,
+            lastItemAt: sql`greatest(${stories.lastItemAt}, ${item.at.toISOString()}::timestamptz)`,
           })
           .where(eq(stories.id, storyId));
       });
@@ -177,6 +191,23 @@ export function createDbStoryStore(db: Db, userId: number): StoryStore {
   };
 }
 
+/** SQL form of `itemTime`: a publication date in the future is capped at the fetch time. */
+const effectiveTime = sql`least(coalesce(${items.publishedAt}, ${items.fetchedAt}), ${items.fetchedAt})`;
+
+interface TimeCursor {
+  at: string;
+  id: number;
+}
+
+/** Keyset condition: items after the cursor in (effective time, id) order. */
+function afterCursor(cursor: TimeCursor | null): SQL | undefined {
+  if (!cursor) return undefined;
+  return or(
+    sql`${effectiveTime} > ${cursor.at}::timestamptz`,
+    and(sql`${effectiveTime} = ${cursor.at}::timestamptz`, gt(items.id, cursor.id)),
+  );
+}
+
 /** Cluster items that have an embedding and no story. Return the counts. */
 export async function clusterPendingItems(
   options: Pick<
@@ -188,7 +219,8 @@ export async function clusterPendingItems(
   const { db, userId } = options;
   const batchSize = options.batchSize ?? DEFAULT_BATCH_SIZE;
   const maxItems = options.maxItems ?? DEFAULT_MAX_ITEMS;
-  let cursor = 0;
+  // Keyset cursor on (effective time, id). The time is kept as text to keep microseconds.
+  let cursor = null as TimeCursor | null;
   let clustered = 0;
   let newStories = 0;
   while (clustered < maxItems) {
@@ -201,6 +233,7 @@ export async function clusterPendingItems(
         publishedAt: items.publishedAt,
         fetchedAt: items.fetchedAt,
         textLength: sql<number>`coalesce(length(${items.text}), 0)`,
+        effectiveAt: sql<string>`${effectiveTime}::text`,
       })
       .from(items)
       .innerJoin(sources, eq(sources.id, items.sourceId))
@@ -209,13 +242,14 @@ export async function clusterPendingItems(
           eq(items.userId, userId),
           isNull(items.storyId),
           isNotNull(items.embedding),
-          gt(items.id, cursor),
+          afterCursor(cursor),
         ),
       )
-      .orderBy(asc(items.id))
+      .orderBy(asc(effectiveTime), asc(items.id))
       .limit(Math.min(batchSize, maxItems - clustered));
     if (rows.length === 0) break;
-    cursor = rows[rows.length - 1]!.id;
+    const last = rows[rows.length - 1]!;
+    cursor = { at: last.effectiveAt, id: last.id };
     const batch: ClusterItem[] = rows.map((row) => ({
       id: row.id,
       title: row.title,
@@ -224,8 +258,7 @@ export async function clusterPendingItems(
       at: itemTime(row.publishedAt, row.fetchedAt),
       textLength: Number(row.textLength),
     }));
-    // Oldest first, so that a story grows forward in time.
-    batch.sort((a, b) => a.at.getTime() - b.at.getTime() || a.id - b.id);
+    // The query returns items globally oldest first, so a story grows forward in time.
     for (const item of batch) {
       const { created } = await assignToStory(store, item, options);
       if (created) newStories++;
