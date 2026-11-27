@@ -44,11 +44,11 @@ export interface ScoringOptions {
   now?: () => Date;
 }
 
-function startOfUtcDay(now: Date): Date {
+export function startOfUtcDay(now: Date): Date {
   return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
 }
 
-function startOfUtcMonth(now: Date): Date {
+export function startOfUtcMonth(now: Date): Date {
   return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
 }
 

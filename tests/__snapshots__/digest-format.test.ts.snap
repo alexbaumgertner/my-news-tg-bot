@@ -1,0 +1,69 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`formatDigest snapshots > renders a Russian evening digest 1`] = `
+"🌙 Вечер, 27 ноября · 3 новости
+
+🤖 <b>Agentic AI</b>
+1. <b>Claude Code gets sub-agents</b>
+The release adds sub-agents. They run in parallel. Each has its own context.
+→ Почему это важно для вас: This changes your Claude Code workflow.
+🔗 <a href="https://example.com/a">Anthropic</a> · EN
+
+2. <b>Second AI story</b>
+The release adds sub-agents. They run in parallel. Each has its own context.
+→ Почему это важно для вас: This changes your Claude Code workflow.
+🔗 <a href="https://example.com/b">Anthropic</a> · EN
+
+🧬 <b>Medicine</b>
+3. <b>Drug X in HHT: a &lt;phase 2&gt; trial &amp; results</b> [РКИ]
+A trial of 40 patients. Bleeding fell by 30 % &amp; more.
+→ Почему это важно для вас: Relevant to HHT.
+🔗 <a href="https://pubmed.example.org/1?a=1&amp;b=2">PubMed</a> · EN
+
+Отфильтровано: 214 материалов из 38 источников."
+`;
+
+exports[`formatDigest snapshots > renders an English morning digest 1`] = `
+"☀️ Morning, 27 November · 4 items
+
+🤖 <b>Agentic AI</b>
+1. <b>Claude Code gets sub-agents</b>
+The release adds sub-agents. They run in parallel. Each has its own context.
+→ Why it matters to you: This changes your Claude Code workflow.
+🔗 <a href="https://example.com/a">Anthropic</a> · EN
+
+2. <b>Second AI story</b>
+The release adds sub-agents. They run in parallel. Each has its own context.
+→ Why it matters to you: This changes your Claude Code workflow.
+🔗 <a href="https://example.com/b">Anthropic</a> · EN
+
+🧬 <b>Medicine</b>
+3. <b>Drug X in HHT: a &lt;phase 2&gt; trial &amp; results</b> [RCT]
+A trial of 40 patients. Bleeding fell by 30 % &amp; more.
+→ Why it matters to you: Relevant to HHT.
+🔗 <a href="https://pubmed.example.org/1?a=1&amp;b=2">PubMed</a> · EN
+
+📰 <b>Economy</b>
+4. <b>Turkey changes work permit rules</b>
+The rules change from January.
+→ Why it matters to you: You live in Turkey.
+🔗 <a href="https://example.com/tr">Tagesschau</a> · DE
+
+Filtered out: 214 items from 38 sources."
+`;
+
+exports[`formatDigest snapshots > says that a day is quiet and skips the footer when it is not given 1`] = `
+"☀️ Morning, 27 November · Quiet day, 2 items
+
+🤖 <b>Agentic AI</b>
+1. <b>Claude Code gets sub-agents</b>
+The release adds sub-agents. They run in parallel. Each has its own context.
+→ Why it matters to you: This changes your Claude Code workflow.
+🔗 <a href="https://example.com/a">Anthropic</a> · EN
+
+🧬 <b>Medicine</b>
+2. <b>Drug X in HHT: a &lt;phase 2&gt; trial &amp; results</b> [RCT]
+A trial of 40 patients. Bleeding fell by 30 % &amp; more.
+→ Why it matters to you: Relevant to HHT.
+🔗 <a href="https://pubmed.example.org/1?a=1&amp;b=2">PubMed</a> · EN"
+`;

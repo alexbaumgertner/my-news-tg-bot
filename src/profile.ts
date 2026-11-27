@@ -17,6 +17,8 @@ export const topicSchema = z
   .object({
     id: z.string().regex(/^[a-z][a-z0-9]*(_[a-z0-9]+)*$/, "use snake_case"),
     title: z.string().min(1),
+    /** Shown before the topic title in a digest. */
+    emoji: z.string().min(1).default("📰"),
     weight: z.number().min(0).max(1),
     mode: z.enum(["digest", "notice"]).default("digest"),
     description: z.string().min(1),

@@ -31,6 +31,12 @@ export interface ScoreMeta {
   promptVersion: string;
 }
 
+/** The `llm_usage.purpose` values. Scoring and composing share one budget. */
+export type UsagePurpose = "score" | "compose";
+
+/** What the composer needs from the store: the shared spend and the usage rows. */
+export type UsageStore = Pick<ScoringStore, "spentSince" | "recordUsage">;
+
 /** Everything that scoring reads and writes. The database implements it; tests may fake it. */
 export interface ScoringStore {
   /** Total cost in USD of all LLM purposes since `since`. */
@@ -52,9 +58,15 @@ export interface ScoringStore {
   markFailed(candidate: Pick<Candidate, "storyId" | "itemId">): Promise<void>;
   /**
    * Record the usage of one answer. With an `entryKey`, a second call with the same key
-   * records nothing and returns false.
+   * records nothing and returns false. The purpose defaults to "score".
    */
-  recordUsage(model: string, usage: LlmUsage, costUsd: number, entryKey?: string): Promise<boolean>;
+  recordUsage(
+    model: string,
+    usage: LlmUsage,
+    costUsd: number,
+    entryKey?: string,
+    purpose?: UsagePurpose,
+  ): Promise<boolean>;
   saveBatch(batch: { providerBatchId: string; entries: BatchEntry[] } & ScoreMeta): Promise<void>;
   endBatch(id: number): Promise<void>;
 }
@@ -159,12 +171,12 @@ export function createDbScoringStore(db: Db, userId: number): ScoringStore {
         .where(and(eq(stories.id, candidate.storyId), eq(stories.userId, userId)));
     },
 
-    async recordUsage(model, usage, costUsd, entryKey) {
+    async recordUsage(model, usage, costUsd, entryKey, purpose = "score") {
       const rows = await db
         .insert(llmUsage)
         .values({
           userId,
-          purpose: "score",
+          purpose,
           model,
           inputTokens: usage.inputTokens,
           outputTokens: usage.outputTokens,
