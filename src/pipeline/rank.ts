@@ -108,9 +108,11 @@ export function selectForDigest(
     if (candidate.isRussiaDomestic || candidate.relevance < options.minRelevance) continue;
     // A story that passed the pre-filter is never dropped only because it has no topic id.
     const matched = candidate.topics.find((id) => weights.has(id));
+    // The general bucket takes only a story with no topic id. A story with known topic ids
+    // (for example notice-only ones) follows the normal topic rules.
+    const general = candidate.allowGeneral && candidate.topics.length === 0;
     const topic =
-      matched ??
-      (candidate.safety ? SAFETY_BUCKET : candidate.allowGeneral ? GENERAL_BUCKET : undefined);
+      matched ?? (candidate.safety ? SAFETY_BUCKET : general ? GENERAL_BUCKET : undefined);
     if (topic === undefined) continue;
     seen.add(candidate.storyId);
     const score = storyScore(candidate, weights.get(topic) ?? 1, now, options);

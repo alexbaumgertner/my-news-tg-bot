@@ -153,6 +153,23 @@ describe("stories without a topic id", () => {
     expect(out.map((s) => s.topic)).toEqual(["general"]);
   });
 
+  it("keeps an unscored story with only notice topics out of the digest", () => {
+    const book = story({ topics: ["books"], allowGeneral: true });
+    expect(selectForDigest([book], profile, "morning", now, new Set())).toEqual([]);
+  });
+
+  it("keeps a safety story with only notice topics in the safety bucket", () => {
+    const permit = story({ topics: ["books"], allowGeneral: true, safety: true });
+    const out = selectForDigest([permit], profile, "morning", now, new Set());
+    expect(out.map((s) => s.topic)).toEqual(["safety"]);
+  });
+
+  it("ranks an unscored story with a digest topic in its topic", () => {
+    const ai = story({ topics: ["ai"], allowGeneral: true });
+    const out = selectForDigest([ai], profile, "morning", now, new Set());
+    expect(out.map((s) => s.topic)).toEqual(["ai"]);
+  });
+
   it("still drops a scored story without a matching topic that is not safety", () => {
     const scored = story({ topics: ["cooking"] });
     expect(selectForDigest([scored], profile, "morning", now, new Set())).toEqual([]);
