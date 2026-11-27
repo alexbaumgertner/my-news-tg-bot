@@ -29,6 +29,11 @@ export const DEFAULT_RANK_OPTIONS: RankOptions = {
 /** The highest source trust. A source with this trust is a primary source. */
 export const PRIMARY_TRUST = 5;
 
+/** Bucket for a story of the safety exception that matches no topic. It ranks first. */
+export const SAFETY_BUCKET = "safety";
+/** Bucket for a story that passed the pre-filter without a topic (fail-open) and has no score. */
+export const GENERAL_BUCKET = "general";
+
 export interface RankCandidate {
   storyId: number;
   title: string;
@@ -41,6 +46,10 @@ export interface RankCandidate {
   sourceTrust: number;
   /** When the story was published. */
   publishedAt: Date;
+  /** True when the pre-filter passed the story by the safety exception. Such stories rank first. */
+  safety?: boolean;
+  /** True when the story may use the general bucket because it has no topic and no score. */
+  allowGeneral?: boolean;
 }
 
 export interface RankedStory extends RankCandidate {
@@ -97,21 +106,32 @@ export function selectForDigest(
   for (const candidate of candidates) {
     if (sentStoryIds.has(candidate.storyId) || seen.has(candidate.storyId)) continue;
     if (candidate.isRussiaDomestic || candidate.relevance < options.minRelevance) continue;
-    const topic = candidate.topics.find((id) => weights.has(id));
+    // A story that passed the pre-filter is never dropped only because it has no topic id.
+    const matched = candidate.topics.find((id) => weights.has(id));
+    const topic =
+      matched ??
+      (candidate.safety ? SAFETY_BUCKET : candidate.allowGeneral ? GENERAL_BUCKET : undefined);
     if (topic === undefined) continue;
     seen.add(candidate.storyId);
-    const score = storyScore(candidate, weights.get(topic) ?? 0, now, options);
+    const score = storyScore(candidate, weights.get(topic) ?? 1, now, options);
     if (score <= 0) continue;
     ranked.push({ ...candidate, topic, score });
   }
-  ranked.sort((a, b) => b.score - a.score || a.storyId - b.storyId);
+  // Safety-exception stories come first, so the digest limit never pushes them out.
+  ranked.sort(
+    (a, b) =>
+      Number(b.safety === true) - Number(a.safety === true) ||
+      b.score - a.score ||
+      a.storyId - b.storyId,
+  );
 
   const perTopic = new Map<string, number>();
   const chosen: RankedStory[] = [];
   for (const story of ranked) {
     if (chosen.length >= DIGEST_LIMITS[kind]) break;
     const used = perTopic.get(story.topic) ?? 0;
-    if (used >= options.maxPerTopic) continue;
+    // The safety bucket has no per-topic limit. The per-digest limit still applies.
+    if (story.topic !== SAFETY_BUCKET && used >= options.maxPerTopic) continue;
     perTopic.set(story.topic, used + 1);
     chosen.push(story);
   }
@@ -142,6 +162,7 @@ export async function loadRankCandidates(
     .select({
       storyId: stories.id,
       title: stories.title,
+      prefilterReason: stories.prefilterReason,
       firstSeenAt: stories.firstSeenAt,
       topics: scores.topics,
       relevance: scores.relevance,
@@ -178,6 +199,7 @@ export async function loadRankCandidates(
       isRussiaDomestic: row.isRussiaDomestic,
       sourceTrust: row.sourceTrust,
       publishedAt: row.publishedAt ?? row.fetchedAt,
+      safety: row.prefilterReason === "safety",
     });
   }
   return [...byStory.values()];
@@ -199,6 +221,7 @@ export async function loadDegradedCandidates(
       storyId: stories.id,
       title: stories.title,
       prefilterTopics: stories.prefilterTopics,
+      prefilterReason: stories.prefilterReason,
       topics: scores.topics,
       relevance: scores.relevance,
       isRussiaDomestic: scores.isRussiaDomestic,
@@ -238,6 +261,8 @@ export async function loadDegradedCandidates(
       isRussiaDomestic: row.isRussiaDomestic ?? false,
       sourceTrust: row.sourceTrust,
       publishedAt: row.publishedAt ?? row.fetchedAt,
+      safety: row.prefilterReason === "safety",
+      allowGeneral: row.relevance === null,
     });
   }
   return [...byStory.values()];

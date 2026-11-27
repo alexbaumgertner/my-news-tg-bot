@@ -1,6 +1,6 @@
 import type { ComposedItem } from "../llm/compose.js";
 import type { DigestLanguage } from "../llm/compose-schema.js";
-import type { DigestKind } from "../pipeline/rank.js";
+import { GENERAL_BUCKET, SAFETY_BUCKET, type DigestKind } from "../pipeline/rank.js";
 import type { Profile } from "../profile.js";
 
 /** Telegram's limit for the text of one message. */
@@ -103,6 +103,28 @@ function ruNews(n: number): string {
 }
 
 /** Escape text for Telegram HTML: `&`, `<` and `>` (Bot API, "HTML style"). */
+/** Title and emoji of the fallback buckets for stories that have no topic. */
+const FALLBACK_HEADERS: Record<string, { emoji: string; title: string }> = {
+  [SAFETY_BUCKET]: { emoji: "⚠️", title: "Safety" },
+  [GENERAL_BUCKET]: { emoji: "📰", title: "Other news" },
+};
+
+/** Sort position of each topic. The safety bucket goes first, profile topics follow. */
+function topicOrder(profile: Profile): Map<string, number> {
+  const order = new Map(profile.topics.map((t, i) => [t.id, i]));
+  order.set(SAFETY_BUCKET, -1);
+  return order;
+}
+
+/** HTML header of a topic block. A topic that is not in the profile uses a fallback header. */
+function topicHeader(profile: Profile, topicId: string): string {
+  const topic = profile.topics.find((t) => t.id === topicId);
+  const fallback = FALLBACK_HEADERS[topicId];
+  const emoji = topic?.emoji ?? fallback?.emoji ?? "📰";
+  const title = topic?.title ?? fallback?.title ?? topicId;
+  return `${escapeHtml(emoji)} <b>${escapeHtml(title)}</b>`;
+}
+
 export function escapeHtml(value: string): string {
   return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
@@ -176,8 +198,8 @@ export function formatDigest(input: DigestInput): FormattedDigest {
   const droppedInvalidUrl = input.items.length - valid.length;
   if (valid.length === 0) return { messages: [], shown: [], droppedInvalidUrl };
 
-  // Group by topic in profile order. A topic that is not in the profile goes last.
-  const order = new Map(input.profile.topics.map((t, i) => [t.id, i]));
+  // Group by topic in profile order. The safety bucket goes first. Other unknown topics go last.
+  const order = topicOrder(input.profile);
   const groups = new Map<string, typeof valid>();
   for (const entry of valid) {
     const list = groups.get(entry.item.topic) ?? [];
@@ -192,8 +214,7 @@ export function formatDigest(input: DigestInput): FormattedDigest {
   const blocks: string[] = [];
   let number = 0;
   for (const topicId of topicIds) {
-    const topic = input.profile.topics.find((t) => t.id === topicId);
-    const header = `${escapeHtml(topic?.emoji ?? "📰")} <b>${escapeHtml(topic?.title ?? topicId)}</b>`;
+    const header = topicHeader(input.profile, topicId);
     const texts: string[] = [];
     for (const { item, url } of groups.get(topicId)!) {
       number++;
@@ -298,7 +319,7 @@ export function formatDegradedDigest(input: DegradedDigestInput): FormattedDegra
   const droppedInvalidUrl = input.stories.length - valid.length;
   if (valid.length === 0) return { messages: [], shown: [], droppedInvalidUrl };
 
-  const order = new Map(input.profile.topics.map((t, i) => [t.id, i]));
+  const order = topicOrder(input.profile);
   const groups = new Map<string, typeof valid>();
   for (const entry of valid) {
     const list = groups.get(entry.story.topic) ?? [];
@@ -313,8 +334,7 @@ export function formatDegradedDigest(input: DegradedDigestInput): FormattedDegra
   const blocks: string[] = [];
   let number = 0;
   for (const topicId of topicIds) {
-    const topic = input.profile.topics.find((t) => t.id === topicId);
-    const header = `${escapeHtml(topic?.emoji ?? "📰")} <b>${escapeHtml(topic?.title ?? topicId)}</b>`;
+    const header = topicHeader(input.profile, topicId);
     const texts: string[] = [];
     for (const { story, url } of groups.get(topicId)!) {
       number++;
