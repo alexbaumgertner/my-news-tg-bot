@@ -40,6 +40,8 @@ const envSchema = z.object({
   EMBEDDINGS_MODEL: z.string().min(1).default("voyage-3.5"),
   DEDUP_SIMILARITY_THRESHOLD: z.coerce.number().gt(0).max(1).default(0.88),
   DEDUP_WINDOW_HOURS: z.coerce.number().positive().max(720).default(48),
+  // Items older than this many days (by effective time) are not embedded or clustered.
+  ITEM_MAX_AGE_DAYS: z.coerce.number().positive().max(3650).default(7),
   PREFILTER_MIN_SIMILARITY: z.coerce.number().min(-1).max(1).default(0.4),
   PREFILTER_WEIGHT_DISCOUNT: z.coerce.number().min(0).max(1).default(0.05),
   // Feedback: each vote moves a multiplier by this fraction. The multipliers stay in the bounds.

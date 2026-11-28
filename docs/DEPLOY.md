@@ -113,6 +113,7 @@ The code reads these variables (`src/config.ts`). An empty value counts as unset
 | `EMBEDDINGS_MODEL` | `voyage-3.5` |
 | `DEDUP_SIMILARITY_THRESHOLD` | `0.88` |
 | `DEDUP_WINDOW_HOURS` | `48` |
+| `ITEM_MAX_AGE_DAYS` | `7`. Older items are not embedded or clustered. They stay in the database. |
 | `PREFILTER_MIN_SIMILARITY` | `0.4` |
 | `PREFILTER_WEIGHT_DISCOUNT` | `0.05` |
 | `FEEDBACK_STEP` | `0.05` |

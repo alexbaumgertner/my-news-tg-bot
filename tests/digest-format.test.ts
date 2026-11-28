@@ -210,6 +210,22 @@ describe("formatDigest rules", () => {
     expect(result.messageItems.flat()).toEqual(Array.from({ length: 10 }, (_, i) => i + 1));
   });
 
+  it("names the real reason in the degraded digest note", () => {
+    const stories = [
+      { storyId: 1, topic: "ai", title: "T", url: "https://example.com/1", sourceName: "Src" },
+    ];
+    const unavailable = formatDegradedDigest({ ...base, language: "en", stories });
+    expect(unavailable.messages.join("\n")).toContain(
+      "language model is unavailable or over budget",
+    );
+    const unscored = formatDegradedDigest({ ...base, language: "en", stories, reason: "unscored" });
+    const text = unscored.messages.join("\n");
+    expect(text).toContain("No scored stories yet");
+    expect(text).not.toContain("over budget");
+    const ru = formatDegradedDigest({ ...base, language: "ru", stories, reason: "unscored" });
+    expect(ru.messages.join("\n")).toContain("Оценённых новостей пока нет");
+  });
+
   it("gives every shown item a link and a why-me line", () => {
     const text = formatDigest({ ...base, language: "ru", items }).messages.join("\n");
     expect(text.match(/🔗 <a href="https?:\/\//g)).toHaveLength(4);

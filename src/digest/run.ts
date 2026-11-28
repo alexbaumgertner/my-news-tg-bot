@@ -187,14 +187,14 @@ export async function runDigest(options: DigestRunOptions): Promise<DigestResult
   const base = { kind, language, profile: options.profile, now, timeZone: options.timeZone };
 
   /** Headlines and links of the given stories. No LLM call. */
-  const buildDegraded = async (list: RankedStory[]) => {
+  const buildDegraded = async (list: RankedStory[], reason: "unavailable" | "unscored") => {
     const stories = await store.loadComposeStories(list, 0);
-    const probe = formatDegradedDigest({ ...base, stories });
+    const probe = formatDegradedDigest({ ...base, stories, reason });
     const filteredOut = await store.countFilteredOut(
       since,
       probe.shown.map((story) => story.storyId),
     );
-    return formatDegradedDigest({ ...base, stories, filteredOut });
+    return formatDegradedDigest({ ...base, stories, filteredOut, reason });
   };
   const useDegraded = (formatted: Awaited<ReturnType<typeof buildDegraded>>) => {
     degraded = true;
@@ -213,7 +213,7 @@ export async function runDigest(options: DigestRunOptions): Promise<DigestResult
     // Nothing is scored. Stories that passed the pre-filter can still wait for a score,
     // because the LLM was unavailable or over budget. Send them as a degraded digest.
     const fallback = await store.rankDegraded(kind, now);
-    const formatted = fallback.length > 0 ? await buildDegraded(fallback) : null;
+    const formatted = fallback.length > 0 ? await buildDegraded(fallback, "unscored") : null;
     if (formatted && formatted.shown.length > 0) {
       logger.warn(
         { stories: formatted.shown.length },
@@ -260,7 +260,7 @@ export async function runDigest(options: DigestRunOptions): Promise<DigestResult
         { ranked: ranked.length, stopReason: report.stopReason },
         "No story could be composed. Sending a degraded digest.",
       );
-      const formatted = await buildDegraded(ranked);
+      const formatted = await buildDegraded(ranked, "unavailable");
       if (formatted.shown.length === 0) {
         throw new Error(
           `No story could be composed or listed (${ranked.length} ranked, stop reason: ${report.stopReason ?? "none"})`,

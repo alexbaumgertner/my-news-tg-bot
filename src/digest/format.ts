@@ -69,6 +69,7 @@ interface Labels {
   count: (count: number) => string;
   filtered: (items: number, sources: number) => string;
   degraded: string;
+  unscored: string;
   locale: string;
 }
 
@@ -85,6 +86,8 @@ const LABELS: Record<DigestLanguage, Labels> = {
     filtered: (i, s) => `Filtered out: ${i} items from ${s} sources.`,
     degraded:
       "⚠️ Degraded digest: the language model is unavailable or over budget today. Headlines and links only, with no summaries.",
+    unscored:
+      "⚠️ No scored stories yet. Scoring may still be running. Headlines and links only, with no summaries.",
     locale: "en-GB",
   },
   ru: {
@@ -97,6 +100,8 @@ const LABELS: Record<DigestLanguage, Labels> = {
     filtered: (i, s) => `Отфильтровано: ${i} материалов из ${s} источников.`,
     degraded:
       "⚠️ Упрощённый дайджест: языковая модель сегодня недоступна или бюджет исчерпан. Только заголовки и ссылки, без пересказов.",
+    unscored:
+      "⚠️ Оценённых новостей пока нет, оценка может ещё идти. Только заголовки и ссылки, без пересказов.",
     locale: "ru-RU",
   },
 };
@@ -321,6 +326,11 @@ export interface DegradedStory {
 export interface DegradedDigestInput extends Omit<DigestInput, "items"> {
   /** Stories in rank order. */
   stories: DegradedStory[];
+  /**
+   * Why the digest has no summaries. "unavailable": the LLM is unavailable or over budget
+   * (default). "unscored": no story has a score yet.
+   */
+  reason?: "unavailable" | "unscored";
 }
 
 export interface FormattedDegradedDigest {
@@ -379,7 +389,10 @@ export function formatDegradedDigest(input: DegradedDigestInput): FormattedDegra
 
   const units: Unit[] = [
     { text: digestHead(input, shown.length), positions: [] },
-    { text: LABELS[input.language].degraded, positions: [] },
+    {
+      text: LABELS[input.language][input.reason === "unscored" ? "unscored" : "degraded"],
+      positions: [],
+    },
     ...blocks,
   ];
   const footer = filteredFooter(input);

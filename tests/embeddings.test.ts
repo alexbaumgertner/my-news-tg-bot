@@ -82,4 +82,69 @@ describe("hosted embeddings client", () => {
     const fetchImpl = (async () => new Response("<html>")) as never;
     await expect(client(fetchImpl).embed(["a"])).rejects.toThrow(/not valid JSON/);
   });
+
+  describe("HTTP 429", () => {
+    function limited(headers: Record<string, string>, failures: number) {
+      let calls = 0;
+      const fetchImpl = (async () => {
+        calls++;
+        return calls <= failures ? new Response("slow", { status: 429, headers }) : okResponse(1);
+      }) as unknown as typeof fetch;
+      return { fetchImpl, calls: () => calls };
+    }
+
+    it("waits for Retry-After and then succeeds", async () => {
+      const waits: number[] = [];
+      const { fetchImpl, calls } = limited({ "retry-after": "7" }, 4);
+      const c = client(fetchImpl, { sleep: async (ms: number) => void waits.push(ms) });
+      await expect(c.embed(["a"])).resolves.toHaveLength(1);
+      // More attempts than the 3 for other errors.
+      expect(calls()).toBe(5);
+      expect(waits).toEqual([7000, 7000, 7000, 7000]);
+    });
+
+    it("backs off with jitter when Retry-After is absent", async () => {
+      const waits: number[] = [];
+      const { fetchImpl } = limited({}, 3);
+      const c = client(fetchImpl, {
+        sleep: async (ms: number) => void waits.push(ms),
+        random: () => 0.5,
+      });
+      await expect(c.embed(["a"])).resolves.toHaveLength(1);
+      expect(waits).toEqual([1500, 3000, 6000]);
+    });
+
+    it("never waits longer than the single pause cap", async () => {
+      const waits: number[] = [];
+      const { fetchImpl } = limited({}, 7);
+      const c = client(fetchImpl, {
+        sleep: async (ms: number) => void waits.push(ms),
+        random: () => 0.99,
+        maxRateLimitWaitMs: 10_000_000,
+      });
+      await c.embed(["a"]);
+      expect(Math.max(...waits)).toBeLessThanOrEqual(60_000);
+    });
+
+    it("gives up when Retry-After is longer than the cap", async () => {
+      const { fetchImpl, calls } = limited({ "retry-after": "3600" }, 10);
+      await expect(client(fetchImpl).embed(["a"])).rejects.toThrow(/429/);
+      expect(calls()).toBe(1);
+    });
+
+    it("gives up when the total wait passes the cap", async () => {
+      const { fetchImpl, calls } = limited({ "retry-after": "30" }, 100);
+      const c = client(fetchImpl, { maxRateLimitWaitMs: 70_000 });
+      await expect(c.embed(["a"])).rejects.toThrow(/429/);
+      expect(calls()).toBe(3);
+    });
+
+    it("gives up after the attempt limit", async () => {
+      const { fetchImpl, calls } = limited({ "retry-after": "1" }, 100);
+      await expect(client(fetchImpl, { maxRateLimitAttempts: 4 }).embed(["a"])).rejects.toThrow(
+        /429/,
+      );
+      expect(calls()).toBe(4);
+    });
+  });
 });
