@@ -1,5 +1,5 @@
 import { join } from "node:path";
-import { sql } from "drizzle-orm";
+import { and, eq, notInArray, sql } from "drizzle-orm";
 import { loadYamlFile, sourcesFileSchema, type Source } from "../config.js";
 import type { Db } from "./client.js";
 import { sources } from "./schema.js";
@@ -22,10 +22,24 @@ export function sourceToRow(source: Source, userId: number): typeof sources.$inf
   };
 }
 
-/** Insert or update `sources` rows from config/sources.yaml. Safe to run many times. */
+/**
+ * Insert or update `sources` rows from config/sources.yaml. Safe to run many times.
+ * A row whose id is not in the file gets `active = false`. Rows are never deleted: items refer to them.
+ */
 export async function seedSources(db: Db, configDir: string, userId: number): Promise<number> {
   const file = loadYamlFile(join(configDir, "sources.yaml"), sourcesFileSchema);
   const rows = file.sources.map((s) => sourceToRow(s, userId));
+  const slugs = rows.map((r) => r.slug);
+  await db
+    .update(sources)
+    .set({ active: false, updatedAt: sql`now()` })
+    .where(
+      and(
+        eq(sources.userId, userId),
+        eq(sources.active, true),
+        slugs.length > 0 ? notInArray(sources.slug, slugs) : undefined,
+      ),
+    );
   if (rows.length === 0) return 0;
   await db
     .insert(sources)

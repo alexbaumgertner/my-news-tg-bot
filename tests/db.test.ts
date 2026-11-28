@@ -1,4 +1,7 @@
-import { resolve } from "node:path";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
+import { and, eq } from "drizzle-orm";
 import { migrate } from "drizzle-orm/postgres-js/migrator";
 import { describe, expect, it } from "vitest";
 import { loadYamlFile, sourcesFileSchema } from "../src/config.js";
@@ -42,6 +45,22 @@ describe.skipIf(!url)("database", () => {
         title: "A",
         contentHash: "hash-a",
       };
+      // An id removed from the file becomes inactive. The row and its items stay.
+      const dir = mkdtempSync(join(tmpdir(), "seed-"));
+      const text = readFileSync("config/sources.yaml", "utf8");
+      const [active] = await db.select().from(sources).where(eq(sources.active, true)).limit(1);
+      const removedId = active!.slug;
+      expect(active!.active).toBe(true);
+      const start = text.indexOf(`  - id: ${removedId}\n`);
+      const next = text.indexOf("\n  - id:", start + 1);
+      writeFileSync(join(dir, "sources.yaml"), text.slice(0, start) + text.slice(next + 1));
+      await seedSources(db, dir, 1);
+      const [after] = await db
+        .select()
+        .from(sources)
+        .where(and(eq(sources.userId, 1), eq(sources.slug, removedId)));
+      expect(after!.active).toBe(false);
+
       await db.insert(items).values(row);
       await expect(db.insert(items).values({ ...row, contentHash: "other" })).rejects.toThrow();
       await expect(
