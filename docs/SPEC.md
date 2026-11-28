@@ -56,7 +56,7 @@ The list below is a starting point. In Phase 0 each entry is checked to see whet
 
 | Type | How it is read | Starting examples |
 |---|---|---|
-| Company and lab blogs | RSS/Atom, else page parsing | Anthropic, OpenAI, Google DeepMind, Hugging Face, GitHub Changelog, Vercel, Next.js, Node.js releases, Simon Willison |
+| Company and lab blogs | RSS/Atom, else page parsing | Anthropic, OpenAI, Google DeepMind, Hugging Face, GitHub Changelog, Simon Willison |
 | Science | Public APIs | arXiv (cs.AI, cs.CL, cs.HC), PubMed E-utilities (HHT, learning, memory), ClinicalTrials.gov (HHT), bioRxiv/medRxiv, Nature and Science news feeds |
 | Patient and medical organizations | RSS / parsing | Cure HHT, relevant medical associations |
 | EU and governments | RSS / parsing + translation | European Commission (Digital, Research & Innovation, Education), CORDIS, AI Act news; Germany: BMBF, DAAD, Make it in Germany; UNESCO and OECD (education); Turkey: official migration and tax sites |
@@ -64,7 +64,6 @@ The list below is a starting point. In Phase 0 each entry is checked to see whet
 | Telegram channels | Public web preview `t.me/s/<channel>` (decided); no account, so no risk for my personal account. Channels with the preview disabled need MTProto (v1) | itsallinenglish, zakat_podcast (preview works); dbibliothek, economistenglish (preview disabled, v1) |
 | Science and tech magazines | RSS | Nature, Quanta, Scientific American, New Scientist, MIT Technology Review, Ars Technica, WIRED, IEEE Spectrum, The Verge, Space.com, NASA, Universe Today, The Conversation, EdSurge |
 | Aggregators (fallback) | API / RSS | Hacker News (score threshold), Techmeme, Google News RSS for key queries |
-| Russian-language | RSS | Habr (AI and Frontend hubs), N+1; world topics only |
 | German and Turkish | RSS + translation | heise, t3n, Deutschlandfunk (science). Also reading material for German practice |
 
 **Rules**
