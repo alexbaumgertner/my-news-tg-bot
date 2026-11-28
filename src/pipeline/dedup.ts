@@ -1,12 +1,14 @@
 import {
   and,
   asc,
+  desc,
   cosineDistance,
   eq,
   gt,
   gte,
   isNotNull,
   isNull,
+  lt,
   lte,
   or,
   sql,
@@ -39,6 +41,9 @@ export interface DedupOptions extends ClusterOptions {
   batchSize?: number;
   /** Maximum items per stage in one run. The rest waits for the next run. */
   maxItems?: number;
+  /** Items older than this (by effective time) are neither embedded nor clustered. */
+  itemMaxAgeMs?: number;
+  now?: () => Date;
 }
 
 export interface DedupReport {
@@ -60,6 +65,39 @@ export function itemTime(publishedAt: Date | null, fetchedAt: Date): Date {
   return publishedAt && publishedAt < fetchedAt ? publishedAt : fetchedAt;
 }
 
+/** SQL form of `itemTime`: a publication date in the future is capped at the fetch time. */
+const effectiveTime = sql`least(coalesce(${items.publishedAt}, ${items.fetchedAt}), ${items.fetchedAt})`;
+
+interface TimeCursor {
+  at: string;
+  id: number;
+}
+
+/** Keyset condition: items after the cursor in (effective time, id) order. */
+function afterCursor(cursor: TimeCursor | null): SQL | undefined {
+  if (!cursor) return undefined;
+  return or(
+    sql`${effectiveTime} > ${cursor.at}::timestamptz`,
+    and(sql`${effectiveTime} = ${cursor.at}::timestamptz`, gt(items.id, cursor.id)),
+  );
+}
+
+/** Keyset condition: items before the cursor in (effective time, id) order. */
+function beforeCursor(cursor: TimeCursor | null): SQL | undefined {
+  if (!cursor) return undefined;
+  return or(
+    sql`${effectiveTime} < ${cursor.at}::timestamptz`,
+    and(sql`${effectiveTime} = ${cursor.at}::timestamptz`, lt(items.id, cursor.id)),
+  );
+}
+
+/** Condition: the effective time is not older than the age limit. */
+function notTooOld(options: Pick<DedupOptions, "itemMaxAgeMs" | "now">): SQL | undefined {
+  if (options.itemMaxAgeMs === undefined) return undefined;
+  const from = new Date((options.now ?? (() => new Date()))().getTime() - options.itemMaxAgeMs);
+  return sql`${effectiveTime} >= ${from.toISOString()}::timestamptz`;
+}
+
 /**
  * Store embeddings for items that have none. `items.embedding` is the cache:
  * an item that has an embedding is never embedded again. Identical input texts
@@ -67,14 +105,18 @@ export function itemTime(publishedAt: Date | null, fetchedAt: Date): Date {
  * `progress.count` shows how many items were stored before a failure.
  */
 export async function embedPendingItems(
-  options: Pick<DedupOptions, "db" | "userId" | "embeddings" | "batchSize" | "maxItems">,
+  options: Pick<
+    DedupOptions,
+    "db" | "userId" | "embeddings" | "batchSize" | "maxItems" | "itemMaxAgeMs" | "now"
+  >,
   progress: { count: number } = { count: 0 },
 ): Promise<number> {
   const { db, userId, embeddings } = options;
   if (!embeddings) return 0;
   const batchSize = options.batchSize ?? DEFAULT_BATCH_SIZE;
   const maxItems = options.maxItems ?? DEFAULT_MAX_ITEMS;
-  let cursor = 0;
+  // Newest items first, so that a rate limit or the item limit never starves today's news.
+  let cursor = null as TimeCursor | null;
   let done = 0;
   while (done < maxItems) {
     const rows = await db
@@ -82,13 +124,22 @@ export async function embedPendingItems(
         id: items.id,
         title: items.title,
         text: sql<string | null>`left(${items.text}, ${EMBED_TEXT_CHARS})`,
+        effectiveAt: sql<string>`${effectiveTime}::text`,
       })
       .from(items)
-      .where(and(eq(items.userId, userId), isNull(items.embedding), gt(items.id, cursor)))
-      .orderBy(asc(items.id))
+      .where(
+        and(
+          eq(items.userId, userId),
+          isNull(items.embedding),
+          notTooOld(options),
+          beforeCursor(cursor),
+        ),
+      )
+      .orderBy(desc(effectiveTime), desc(items.id))
       .limit(Math.min(batchSize, maxItems - done));
     if (rows.length === 0) break;
-    cursor = rows[rows.length - 1]!.id;
+    const last = rows[rows.length - 1]!;
+    cursor = { at: last.effectiveAt, id: last.id };
     const inputs = rows.map((row) => embeddingInput(row.title, row.text));
     const unique = [...new Set(inputs)];
     const vectors = await embeddings.embed(unique);
@@ -202,28 +253,11 @@ export function createDbStoryStore(db: Db, userId: number): StoryStore {
   };
 }
 
-/** SQL form of `itemTime`: a publication date in the future is capped at the fetch time. */
-const effectiveTime = sql`least(coalesce(${items.publishedAt}, ${items.fetchedAt}), ${items.fetchedAt})`;
-
-interface TimeCursor {
-  at: string;
-  id: number;
-}
-
-/** Keyset condition: items after the cursor in (effective time, id) order. */
-function afterCursor(cursor: TimeCursor | null): SQL | undefined {
-  if (!cursor) return undefined;
-  return or(
-    sql`${effectiveTime} > ${cursor.at}::timestamptz`,
-    and(sql`${effectiveTime} = ${cursor.at}::timestamptz`, gt(items.id, cursor.id)),
-  );
-}
-
 /** Cluster items that have an embedding and no story. Return the counts. */
 export async function clusterPendingItems(
   options: Pick<
     DedupOptions,
-    "db" | "userId" | "threshold" | "windowMs" | "batchSize" | "maxItems"
+    "db" | "userId" | "threshold" | "windowMs" | "batchSize" | "maxItems" | "itemMaxAgeMs" | "now"
   >,
   store: StoryStore = createDbStoryStore(options.db, options.userId),
 ): Promise<{ clustered: number; newStories: number }> {
@@ -253,6 +287,7 @@ export async function clusterPendingItems(
           eq(items.userId, userId),
           isNull(items.storyId),
           isNotNull(items.embedding),
+          notTooOld(options),
           afterCursor(cursor),
         ),
       )

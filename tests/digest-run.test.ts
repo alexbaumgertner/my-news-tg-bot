@@ -408,7 +408,8 @@ describe("runDigest", () => {
     const result = await runDigest(options());
     expect(result).toMatchObject({ status: "sent", stories: 2, degraded: true });
     const html = sender.sent[0]!.html;
-    expect(html).toContain("Degraded digest");
+    expect(html).toContain("Degraded digest: the language model is unavailable or over budget");
+    expect(html).not.toContain("No scored stories yet");
     expect(html).toContain('<a href="https://example.com/1">Story 1</a>');
     expect(html).not.toContain("Why it matters");
     // The stories count as sent only after Telegram accepted the message.
@@ -439,6 +440,8 @@ describe("runDigest", () => {
     const result = await runDigest(options());
     expect(result).toMatchObject({ status: "sent", stories: 2, degraded: true });
     expect(sender.sent[0]!.html).toContain("Story 5");
+    expect(sender.sent[0]!.html).toContain("No scored stories yet");
+    expect(sender.sent[0]!.html).not.toContain("over budget");
   });
 
   it("keeps a degraded digest unsent after a failed send", async () => {

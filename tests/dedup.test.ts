@@ -145,4 +145,64 @@ describe.skipIf(!url)("runDedup", () => {
       await client.end();
     }
   });
+
+  it("embeds the newest items first and skips items older than the age limit", async () => {
+    const { db, client } = createDb(url!, { max: 1 });
+    try {
+      await client.unsafe(
+        "DROP SCHEMA IF EXISTS public CASCADE; DROP SCHEMA IF EXISTS drizzle CASCADE; CREATE SCHEMA public",
+      );
+      await migrate(db, { migrationsFolder: resolve("drizzle") });
+      const [source] = await db
+        .insert(sources)
+        .values({
+          userId: 1,
+          slug: "s",
+          name: "S",
+          type: "rss",
+          url: "https://s.example/feed",
+          language: "en",
+          trust: 3,
+          pollInterval: "1h",
+          active: true,
+        })
+        .returning();
+      const now = new Date();
+      const row = (n: number, hoursAgo: number) => ({
+        userId: 1,
+        sourceId: source!.id,
+        url: `https://x.example/${n}`,
+        canonicalUrl: `https://x.example/${n}`,
+        title: `item ${n}`,
+        contentHash: `h${n}`,
+        publishedAt: new Date(now.getTime() - hoursAgo * HOUR),
+      });
+      // Oldest first by id. Item 4 is outside the 3-day window.
+      await db.insert(items).values([row(1, 30), row(2, 20), row(3, 10), row(4, 100)]);
+      const seen: string[] = [];
+      const embeddings: EmbeddingsClient = {
+        embed: async (texts) => {
+          seen.push(...texts);
+          return texts.map(() => vector(0));
+        },
+      };
+      const report = await runDedup({
+        db,
+        userId: 1,
+        logger: pino({ level: "silent" }),
+        threshold: 0.88,
+        windowMs: 48 * HOUR,
+        embeddings,
+        batchSize: 1,
+        itemMaxAgeMs: 72 * HOUR,
+      });
+      expect(seen).toEqual(["item 3", "item 2", "item 1"]);
+      expect(report.embedded).toBe(3);
+      expect(report.clustered).toBe(3);
+      // The old item stays in the database, unprocessed.
+      expect(await db.$count(items)).toBe(4);
+    } finally {
+      await client.end();
+    }
+  });
 });

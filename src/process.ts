@@ -30,6 +30,7 @@ async function main(): Promise<number> {
           })
         : null,
       cluster: clusterOptionsFromEnv(env),
+      itemMaxAgeMs: env.ITEM_MAX_AGE_DAYS * 86_400_000,
       prefilter: prefilterOptionsFromEnv(env),
       scoring: {
         provider: env.ANTHROPIC_API_KEY

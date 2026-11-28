@@ -16,6 +16,8 @@ export interface ProcessOptions {
   /** Null when `EMBEDDINGS_API_KEY` is not set. Dedup and the pre-filter then degrade. */
   embeddings: EmbeddingsClient | null;
   cluster: ClusterOptions;
+  /** Items older than this are not embedded or clustered. Undefined: no limit. */
+  itemMaxAgeMs?: number;
   prefilter: PrefilterOptions;
   /** The scoring options without the store. A null provider skips scoring. */
   scoring: Omit<ScoringOptions, "store" | "logger" | "profile">;
@@ -39,6 +41,7 @@ export async function runProcess(options: ProcessOptions): Promise<ProcessReport
     userId,
     logger,
     embeddings: options.embeddings,
+    itemMaxAgeMs: options.itemMaxAgeMs,
     ...options.cluster,
   });
   const prefilter = await runPrefilter({
