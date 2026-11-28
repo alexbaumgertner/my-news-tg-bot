@@ -282,20 +282,46 @@ Update by release tag. The owner publishes a tag `vX.Y.Z` on GitHub.
 3. The script prints a warning if a unit in `deploy/` is new or changed. Install it by hand (step 5).
 4. Each tag is tried once. To retry a failed tag, run `sudo -u newsbot newsbot-deploy <tag>`.
 
-To deploy at once, without waiting for the timer, run the same command. If you change `deploy/deploy.sh` or `deploy/autodeploy.sh` in a release, copy it to `/usr/local/bin` again (step 5).
+To deploy at once, without waiting for the timer, run the same command. `newsbot-deploy` does not write `/var/lib/newsbot/last-tag`. Only `newsbot-autodeploy` writes it. After a manual deploy of the newest tag, record the tag. Then the timer does not deploy the same tag again:
+
+```bash
+sudo -u newsbot sh -c 'echo v0.2.0 > /var/lib/newsbot/last-tag'   # the tag you deployed
+```
+
+If you change `deploy/deploy.sh` or `deploy/autodeploy.sh` in a release, copy it to `/usr/local/bin` again (step 5).
 
 Check the result: `journalctl -u newsbot-autodeploy -n 50` and `systemctl status my-news-tg-bot`.
 
 ## 11. Rollback
 
-Deploy the previous tag by hand. Find it first:
+Autodeploy reads `/var/lib/newsbot/last-tag`. The file holds one tag, for example `v0.2.0`. The timer deploys the newest tag in origin when it differs from the file. `newsbot-deploy` does not write the file. So a rollback needs these steps, in this order.
 
-```bash
-git -C /opt/my-news-tg-bot tag --list 'v*' --sort=-v:refname | head -3
-sudo -u newsbot newsbot-deploy v0.1.0     # the previous tag
-```
+1. Stop the timer, so it cannot deploy while you work:
 
-The autodeploy timer does not undo this. It records the newest tag as tried, so it deploys again only when a newer tag appears. Publish a fixed tag to move forward.
+   ```bash
+   sudo systemctl stop newsbot-autodeploy.timer
+   ```
+
+2. Record the rejected tag, which is the newest tag in origin. The timer then sees no new tag:
+
+   ```bash
+   sudo -u newsbot sh -c 'echo v0.2.0 > /var/lib/newsbot/last-tag'   # the rejected tag
+   ```
+
+3. Find the previous tag and deploy it by hand:
+
+   ```bash
+   git -C /opt/my-news-tg-bot tag --list 'v*' --sort=-v:refname | head -3
+   sudo -u newsbot newsbot-deploy v0.1.0     # the previous tag
+   ```
+
+4. Publish a fixed tag, for example `v0.2.1`. Then start the timer. It sees a tag that differs from the file and deploys it:
+
+   ```bash
+   sudo systemctl start newsbot-autodeploy.timer
+   ```
+
+Do not start the timer before the fixed tag exists. If step 2 is skipped, the next timer run deploys the rejected tag again.
 
 Migrations do not roll back. If the bad release added a migration, the old code runs on the new schema. Check `drizzle/` between the two tags. If the migration is not compatible, restore the database from a backup.
 
